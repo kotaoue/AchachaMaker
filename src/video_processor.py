@@ -54,101 +54,109 @@ class VideoExportConfig:
 
 
 def _escape_drawtext(text: str) -> str:
-    """Escape special characters for the ffmpeg drawtext filter."""
-    # Order matters: backslash first
+    """Escape special characters for the ffmpeg ``drawtext`` filter.
+
+    Backslashes must be escaped before other characters to avoid
+    double-escaping.
+    """
     text = text.replace("\\", "\\\\")
     text = text.replace("'", "\\'")
     text = text.replace(":", "\\:")
     return text
 
 
-def build_ffmpeg_command(config: VideoExportConfig) -> list[str]:
+def _build_video_inputs(config: VideoExportConfig) -> list[str]:
+    """Return ffmpeg input flags for the two source videos."""
+    return [
+        "-ss", str(config.video1_start), "-i", config.video1_path,
+        "-ss", str(config.video2_start), "-i", config.video2_path,
+    ]
+
+
+def _build_image_inputs(
+    config: VideoExportConfig, start_index: int
+) -> tuple[list[str], list[int]]:
+    """Return ffmpeg input flags for background images and their stream indices."""
+    args: list[str] = []
+    indices: list[int] = []
+    for i, bg in enumerate(config.background_entries):
+        args += ["-i", bg.image_path]
+        indices.append(start_index + i)
+    return args, indices
+
+
+def _build_audio_input(
+    config: VideoExportConfig, start_index: int
+) -> tuple[list[str], Optional[int]]:
+    """Return ffmpeg input flags for the optional audio track and its stream index.
+
+    Returns an empty list and ``None`` when no audio path is configured.
     """
-    Build the ffmpeg command list for the given export configuration.
+    if not config.audio_path:
+        return [], None
+    return ["-ss", str(config.audio_start), "-i", config.audio_path], start_index
 
-    The function constructs a filter_complex that:
-    1. Trims each video to the requested start offset.
-    2. Scales each video to fill its half of the output canvas.
-    3. Places both clips side-by-side (or top/bottom).
-    4. Overlays any background images.
-    5. Draws subtitle text for each SubtitleEntry.
-    6. Mixes in the optional VOICEVOX audio track.
+
+def _build_scale_and_layout_filters(
+    config: VideoExportConfig,
+) -> tuple[list[str], str]:
+    """Return scale/pad and stack filters that composite the two video streams.
+
+    Each clip is letterboxed into its half of the canvas, then the two halves
+    are joined with ``hstack`` (side-by-side) or ``vstack`` (top/bottom).
+    Returns the filter list and the output stream label ``"combined"``.
     """
-    cmd: list[str] = ["ffmpeg", "-y"]
-
-    # ---- Inputs ----
-    # Input 0: video 1
-    cmd += ["-ss", str(config.video1_start), "-i", config.video1_path]
-    # Input 1: video 2
-    cmd += ["-ss", str(config.video2_start), "-i", config.video2_path]
-
-    input_count = 2
-
-    background_input_indices: list[int] = []
-    for bg in config.background_entries:
-        cmd += ["-i", bg.image_path]
-        background_input_indices.append(input_count)
-        input_count += 1
-
-    audio_input_index: Optional[int] = None
-    if config.audio_path:
-        cmd += [
-            "-ss",
-            str(config.audio_start),
-            "-i",
-            config.audio_path,
-        ]
-        audio_input_index = input_count
-        input_count += 1
-
-    # ---- filter_complex ----
-    w = config.output_width
-    h = config.output_height
-
+    w, h = config.output_width, config.output_height
     if config.layout == "side_by_side":
-        half_w = w // 2
-        scale_w, scale_h = half_w, h
-    else:  # top_bottom
-        half_h = h // 2
-        scale_w, scale_h = w, half_h
-
-    filters: list[str] = []
-
-    # Scale each clip
-    filters.append(
-        f"[0:v]scale={scale_w}:{scale_h}:force_original_aspect_ratio=decrease,"
-        f"pad={scale_w}:{scale_h}:(ow-iw)/2:(oh-ih)/2[v0]"
-    )
-    filters.append(
-        f"[1:v]scale={scale_w}:{scale_h}:force_original_aspect_ratio=decrease,"
-        f"pad={scale_w}:{scale_h}:(ow-iw)/2:(oh-ih)/2[v1]"
-    )
-
-    # Combine clips
-    if config.layout == "side_by_side":
-        filters.append(f"[v0][v1]hstack=inputs=2[combined]")
+        scale_w, scale_h, stack = w // 2, h, "hstack"
     else:
-        filters.append(f"[v0][v1]vstack=inputs=2[combined]")
+        scale_w, scale_h, stack = w, h // 2, "vstack"
 
-    current_label = "combined"
+    pad = f"pad={scale_w}:{scale_h}:(ow-iw)/2:(oh-ih)/2"
+    scale = f"scale={scale_w}:{scale_h}:force_original_aspect_ratio=decrease"
+    return [
+        f"[0:v]{scale},{pad}[v0]",
+        f"[1:v]{scale},{pad}[v1]",
+        f"[v0][v1]{stack}=inputs=2[combined]",
+    ], "combined"
 
-    # Overlay background images
-    for idx, (bg, bg_input_idx) in enumerate(
-        zip(config.background_entries, background_input_indices)
+
+def _build_overlay_filters(
+    config: VideoExportConfig,
+    bg_input_indices: list[int],
+    current_label: str,
+) -> tuple[list[str], str]:
+    """Return overlay filters for each background image entry.
+
+    Each filter composites the image over the current video stream for its
+    active time window.  Returns the updated filter list and stream label.
+    """
+    filters: list[str] = []
+    for idx, (bg, input_idx) in enumerate(
+        zip(config.background_entries, bg_input_indices)
     ):
         next_label = f"bg{idx}"
         filters.append(
-            f"[{current_label}][{bg_input_idx}:v]"
-            f"overlay=0:0:enable='between(t,{bg.start_time},{bg.end_time})'[{next_label}]"
+            f"[{current_label}][{input_idx}:v]"
+            f"overlay=0:0:enable='between(t,{bg.start_time},{bg.end_time})'"
+            f"[{next_label}]"
         )
         current_label = next_label
+    return filters, current_label
 
-    # Draw subtitles
+
+def _build_drawtext_filters(
+    config: VideoExportConfig, current_label: str
+) -> tuple[list[str], str]:
+    """Return ``drawtext`` filters for each subtitle entry.
+
+    Returns the updated filter list and the final stream label.
+    """
+    filters: list[str] = []
     for idx, sub in enumerate(config.subtitles):
         next_label = f"sub{idx}"
-        escaped = _escape_drawtext(sub.text)
         draw = (
-            f"drawtext=text='{escaped}'"
+            f"drawtext=text='{_escape_drawtext(sub.text)}'"
             f":fontsize={sub.font_size}"
             f":fontcolor={sub.color}"
             f":x={sub.x}"
@@ -157,21 +165,21 @@ def build_ffmpeg_command(config: VideoExportConfig) -> list[str]:
         )
         filters.append(f"[{current_label}]{draw}[{next_label}]")
         current_label = next_label
+    return filters, current_label
 
-    filter_complex = ";".join(filters)
 
-    cmd += ["-filter_complex", filter_complex]
-    cmd += ["-map", f"[{current_label}]"]
-
-    # Audio mapping
+def _build_output_args(
+    config: VideoExportConfig,
+    video_label: str,
+    audio_input_index: Optional[int],
+) -> list[str]:
+    """Return the output mapping, codec, and container arguments."""
+    args = ["-map", f"[{video_label}]"]
     if audio_input_index is not None:
-        cmd += ["-map", f"{audio_input_index}:a"]
-        cmd += ["-c:a", "aac", "-b:a", config.audio_bitrate]
+        args += ["-map", f"{audio_input_index}:a", "-c:a", "aac", "-b:a", config.audio_bitrate]
     else:
-        cmd += ["-an"]
-
-    # Output settings
-    cmd += [
+        args += ["-an"]
+    args += [
         "-t", str(config.duration),
         "-c:v", "libx264",
         "-b:v", config.video_bitrate,
@@ -179,6 +187,38 @@ def build_ffmpeg_command(config: VideoExportConfig) -> list[str]:
         "-pix_fmt", "yuv420p",
         config.output_path,
     ]
+    return args
+
+
+def build_ffmpeg_command(config: VideoExportConfig) -> list[str]:
+    """Build the complete ffmpeg command list for the given export configuration.
+
+    Constructs a ``filter_complex`` that trims, scales, and composites the two
+    source videos, optionally overlays background images, burns in subtitles,
+    and mixes in a VOICEVOX audio track.
+    """
+    cmd: list[str] = ["ffmpeg", "-y"]
+
+    cmd += _build_video_inputs(config)
+
+    image_args, bg_input_indices = _build_image_inputs(config, start_index=2)
+    cmd += image_args
+
+    audio_args, audio_input_index = _build_audio_input(
+        config, start_index=2 + len(bg_input_indices)
+    )
+    cmd += audio_args
+
+    scale_filters, current_label = _build_scale_and_layout_filters(config)
+    overlay_filters, current_label = _build_overlay_filters(
+        config, bg_input_indices, current_label
+    )
+    drawtext_filters, current_label = _build_drawtext_filters(config, current_label)
+
+    filter_complex = ";".join(scale_filters + overlay_filters + drawtext_filters)
+    cmd += ["-filter_complex", filter_complex]
+
+    cmd += _build_output_args(config, current_label, audio_input_index)
 
     return cmd
 
