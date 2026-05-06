@@ -48,16 +48,12 @@ from src.video_processor import (
 from src.voicevox import VoicevoxClient
 
 
-# ─── Worker signal bridge ──────────────────────────────────────────────────────
-
-
 class WorkerSignals(QObject):
+    """Signal bridge for communication between worker threads and the UI."""
+
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
-
-
-# ─── Main window ──────────────────────────────────────────────────────────────
 
 
 class MainWindow(QMainWindow):
@@ -73,9 +69,8 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._check_voicevox()
 
-    # ── UI construction ────────────────────────────────────────────────────
-
     def _setup_ui(self) -> None:
+        """Build and wire the entire UI hierarchy."""
         central = QWidget()
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
@@ -85,85 +80,57 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         root_layout.addWidget(splitter, stretch=1)
 
-        # Top half: video inputs + preview placeholder
-        top_widget = QWidget()
-        top_layout = QHBoxLayout(top_widget)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-
-        top_layout.addWidget(self._build_video_panel(), stretch=1)
-        top_layout.addWidget(self._build_preview_panel(), stretch=2)
-
-        splitter.addWidget(top_widget)
-
-        # Bottom half: timeline + edit panel
-        bottom_widget = QWidget()
-        bottom_layout = QVBoxLayout(bottom_widget)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.setSpacing(4)
-
-        bottom_layout.addWidget(self._build_timeline_panel(), stretch=2)
-        bottom_layout.addWidget(self._build_edit_panel(), stretch=1)
-
-        splitter.addWidget(bottom_widget)
+        splitter.addWidget(self._build_top_panel())
+        splitter.addWidget(self._build_bottom_panel())
         splitter.setSizes([300, 500])
 
-        # Export button
         export_btn = QPushButton("📤  書き出す")
         export_btn.setFixedHeight(40)
         export_btn.setFont(QFont("sans-serif", 12, QFont.Weight.Bold))
         export_btn.clicked.connect(self._on_export)
         root_layout.addWidget(export_btn)
 
-        # Status bar
         self.statusBar().showMessage("準備完了")
 
+    def _build_top_panel(self) -> QWidget:
+        """Build the top panel containing video inputs and the preview area."""
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.addWidget(self._build_video_panel(), stretch=1)
+        top_layout.addWidget(self._build_preview_panel(), stretch=2)
+        return top_widget
+
+    def _build_bottom_panel(self) -> QWidget:
+        """Build the bottom panel containing the timeline and the edit controls."""
+        bottom_widget = QWidget()
+        bottom_layout = QVBoxLayout(bottom_widget)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(4)
+        bottom_layout.addWidget(self._build_timeline_panel(), stretch=2)
+        bottom_layout.addWidget(self._build_edit_panel(), stretch=1)
+        return bottom_widget
+
     def _build_video_panel(self) -> QGroupBox:
+        """Build the video file inputs panel."""
         box = QGroupBox("動画ファイル")
         layout = QFormLayout(box)
         layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        # Video 1
-        self._video1_path = QLineEdit()
-        self._video1_path.setPlaceholderText("動画ファイル 1 のパス")
-        btn1 = QPushButton("参照…")
-        btn1.clicked.connect(lambda: self._browse_video(self._video1_path, 0))
-        row1 = QWidget()
-        row1_layout = QHBoxLayout(row1)
-        row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.addWidget(self._video1_path)
-        row1_layout.addWidget(btn1)
+        self._video1_path, row1 = self._build_video_file_row("動画ファイル 1 のパス", 0)
         layout.addRow("映像 1:", row1)
-
-        self._video1_start = QDoubleSpinBox()
-        self._video1_start.setRange(0, 9999)
-        self._video1_start.setSuffix(" 秒")
-        self._video1_start.setDecimals(2)
+        self._video1_start = self._build_start_spinbox()
         layout.addRow("開始位置 1:", self._video1_start)
 
-        # Video 2
-        self._video2_path = QLineEdit()
-        self._video2_path.setPlaceholderText("動画ファイル 2 のパス")
-        btn2 = QPushButton("参照…")
-        btn2.clicked.connect(lambda: self._browse_video(self._video2_path, 1))
-        row2 = QWidget()
-        row2_layout = QHBoxLayout(row2)
-        row2_layout.setContentsMargins(0, 0, 0, 0)
-        row2_layout.addWidget(self._video2_path)
-        row2_layout.addWidget(btn2)
+        self._video2_path, row2 = self._build_video_file_row("動画ファイル 2 のパス", 1)
         layout.addRow("映像 2:", row2)
-
-        self._video2_start = QDoubleSpinBox()
-        self._video2_start.setRange(0, 9999)
-        self._video2_start.setSuffix(" 秒")
-        self._video2_start.setDecimals(2)
+        self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
 
-        # Layout selector
         self._layout_combo = QComboBox()
         self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
         layout.addRow("レイアウト:", self._layout_combo)
 
-        # Duration
         self._duration_spin = QDoubleSpinBox()
         self._duration_spin.setRange(1, 3600)
         self._duration_spin.setValue(60)
@@ -175,7 +142,31 @@ class MainWindow(QMainWindow):
 
         return box
 
+    def _build_video_file_row(
+        self, placeholder: str, clip_index: int
+    ) -> tuple[QLineEdit, QWidget]:
+        """Build a file path input with a browse button for a video source."""
+        path_edit = QLineEdit()
+        path_edit.setPlaceholderText(placeholder)
+        btn = QPushButton("参照…")
+        btn.clicked.connect(lambda: self._browse_video(path_edit, clip_index))
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addWidget(path_edit)
+        row_layout.addWidget(btn)
+        return path_edit, row
+
+    def _build_start_spinbox(self) -> QDoubleSpinBox:
+        """Build a spinbox for specifying a video start time in seconds."""
+        spin = QDoubleSpinBox()
+        spin.setRange(0, 9999)
+        spin.setSuffix(" 秒")
+        spin.setDecimals(2)
+        return spin
+
     def _build_preview_panel(self) -> QGroupBox:
+        """Build the preview placeholder panel."""
         box = QGroupBox("プレビュー")
         layout = QVBoxLayout(box)
 
@@ -190,6 +181,7 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_timeline_panel(self) -> QGroupBox:
+        """Build the scrollable timeline panel."""
         box = QGroupBox("タイムライン  （スクロールでズーム、クリップをドラッグで移動）")
         layout = QVBoxLayout(box)
 
@@ -208,17 +200,20 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_edit_panel(self) -> QWidget:
+        """Build the bottom edit panel with subtitle, background, and VOICEVOX controls."""
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         layout.addWidget(self._build_subtitle_group())
+        layout.addWidget(self._build_background_group())
         layout.addWidget(self._build_voicevox_group())
 
         return container
 
     def _build_subtitle_group(self) -> QGroupBox:
+        """Build the subtitle (telop) edit form."""
         box = QGroupBox("テロップ追加")
         layout = QFormLayout(box)
         layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -252,7 +247,14 @@ class MainWindow(QMainWindow):
         add_btn.clicked.connect(self._on_add_subtitle)
         layout.addRow(add_btn)
 
-        # Background
+        return box
+
+    def _build_background_group(self) -> QGroupBox:
+        """Build the background image edit form."""
+        box = QGroupBox("背景")
+        layout = QFormLayout(box)
+        layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
         self._bg_path = QLineEdit()
         self._bg_path.setPlaceholderText("背景画像パス")
         bg_browse = QPushButton("参照…")
@@ -284,6 +286,7 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_voicevox_group(self) -> QGroupBox:
+        """Build the VOICEVOX text-to-speech synthesis form."""
         box = QGroupBox("VOICEVOX 音声合成")
         layout = QFormLayout(box)
         layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -315,9 +318,8 @@ class MainWindow(QMainWindow):
 
         return box
 
-    # ── Slot implementations ───────────────────────────────────────────────
-
     def _browse_video(self, line_edit: QLineEdit, clip_index: int) -> None:
+        """Open a file chooser, update the path field, and refresh the timeline clip."""
         path, _ = QFileDialog.getOpenFileName(
             self,
             "動画ファイルを選択",
@@ -327,21 +329,24 @@ class MainWindow(QMainWindow):
         if not path:
             return
         line_edit.setText(path)
-        # Add/update clip in timeline
+        self._update_timeline_clip(path, clip_index)
+        self.statusBar().showMessage(f"映像{clip_index + 1}: {os.path.basename(path)}")
+
+    def _update_timeline_clip(self, path: str, clip_index: int) -> None:
+        """Replace the timeline clip for *clip_index* with one built from *path*."""
         label = os.path.basename(path)
         start_spin = self._video1_start if clip_index == 0 else self._video2_start
         new_clip = TimelineClip(
             label=label,
             start=start_spin.value(),
-            duration=60.0,  # placeholder; would use ffprobe in full version
+            duration=60.0,
             row=clip_index,
         )
-        # Replace existing clip for this row
         self._timeline.clips = [c for c in self._timeline.clips if c.row != clip_index]
         self._timeline.add_clip(new_clip)
-        self.statusBar().showMessage(f"映像{clip_index + 1}: {label}")
 
     def _browse_background(self) -> None:
+        """Open a file chooser and populate the background image path field."""
         path, _ = QFileDialog.getOpenFileName(
             self,
             "背景画像を選択",
@@ -352,6 +357,7 @@ class MainWindow(QMainWindow):
             self._bg_path.setText(path)
 
     def _on_add_subtitle(self) -> None:
+        """Validate the subtitle form and add a new subtitle to the timeline."""
         text = self._sub_text.text().strip()
         if not text:
             QMessageBox.warning(self, "入力エラー", "テキストを入力してください。")
@@ -368,6 +374,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f'テロップ追加: "{text}"')
 
     def _on_add_background(self) -> None:
+        """Validate the background form and add a background entry to the timeline."""
         path = self._bg_path.text().strip()
         if not path:
             QMessageBox.warning(self, "入力エラー", "背景画像を選択してください。")
@@ -382,10 +389,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"背景追加: {os.path.basename(path)}")
 
     def _check_voicevox(self) -> None:
+        """Populate the speaker list if the VOICEVOX engine is already running."""
         if self._voicevox.is_available():
             self._refresh_speakers()
 
     def _refresh_speakers(self) -> None:
+        """Fetch available VOICEVOX speakers and repopulate the speaker combo."""
         try:
             speakers = self._voicevox.get_speakers()
             self._speakers = speakers
@@ -399,6 +408,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"VOICEVOX に接続できません: {e}")
 
     def _on_generate_voice(self) -> None:
+        """Validate the voice form and start async TTS synthesis."""
         text = self._vv_text.text().strip()
         if not text:
             QMessageBox.warning(self, "入力エラー", "セリフを入力してください。")
@@ -411,7 +421,7 @@ class MainWindow(QMainWindow):
 
         speaker_id = self._vv_speaker.currentData()
         if speaker_id is None:
-            speaker_id = 1  # default
+            speaker_id = 1
 
         self._vv_status.setText("生成中…")
         signals = WorkerSignals()
@@ -429,6 +439,7 @@ class MainWindow(QMainWindow):
         t.start()
 
     def _on_voice_generated(self, path: str) -> None:
+        """Update the timeline and status bar after TTS synthesis completes."""
         self._audio_path = path
         start = self._vv_start.value()
         audio = TimelineAudio(label=os.path.basename(path), start=start, duration=5.0)
@@ -437,15 +448,18 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("音声生成完了")
 
     def _on_playhead_moved(self, time: float) -> None:
+        """Show the new playhead position in the status bar."""
         minutes = int(time) // 60
         secs = int(time) % 60
         self.statusBar().showMessage(f"再生位置: {minutes}:{secs:02d}")
 
     def _on_clip_moved(self, index: int, new_start: float) -> None:
+        """Show the updated clip start time in the status bar."""
         which = "映像1" if index == 0 else "映像2"
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
 
     def _on_export(self) -> None:
+        """Validate inputs, collect configuration, and run ffmpeg export asynchronously."""
         v1 = self._video1_path.text().strip()
         v2 = self._video2_path.text().strip()
 
@@ -462,6 +476,13 @@ class MainWindow(QMainWindow):
         if not out_path:
             return
 
+        config = self._build_export_config(v1, v2, out_path)
+        self._run_export_async(config, out_path)
+
+    def _build_export_config(
+        self, v1: str, v2: str, out_path: str
+    ) -> VideoExportConfig:
+        """Assemble a :class:`VideoExportConfig` from the current UI state."""
         layout_idx = self._layout_combo.currentIndex()
         layout = "side_by_side" if layout_idx == 0 else "top_bottom"
 
@@ -476,7 +497,7 @@ class MainWindow(QMainWindow):
             for sub in self._timeline.subtitles
         ]
 
-        config = VideoExportConfig(
+        return VideoExportConfig(
             video1_path=v1,
             video2_path=v2,
             video1_start=self._video1_start.value(),
@@ -488,6 +509,8 @@ class MainWindow(QMainWindow):
             audio_path=self._audio_path,
         )
 
+    def _run_export_async(self, config: VideoExportConfig, out_path: str) -> None:
+        """Start ffmpeg export in a background thread and wire status callbacks."""
         self.statusBar().showMessage("書き出し中…")
         signals = WorkerSignals()
         signals.finished.connect(

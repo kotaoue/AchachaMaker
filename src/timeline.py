@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -20,12 +21,10 @@ from PyQt6.QtGui import (
     QMouseEvent,
     QPainter,
     QPen,
+    QPolygonF,
     QWheelEvent,
 )
 from PyQt6.QtWidgets import QWidget
-
-
-# ─── Data models ──────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -69,9 +68,6 @@ class TimelineAudio:
     start: float
     duration: float
     row: int = 4
-
-
-# ─── Timeline widget ───────────────────────────────────────────────────────────
 
 
 _ROW_LABELS = ["映像1", "映像2", "テロップ", "背景", "音声"]
@@ -131,61 +127,66 @@ class TimelineWidget(QWidget):
         )
         self.setMouseTracking(True)
 
-    # ── Public helpers ──────────────────────────────────────────────────────
-
     def set_duration(self, seconds: float) -> None:
+        """Set the total visible duration of the timeline in seconds."""
         self.duration = max(1.0, seconds)
         self.update()
 
     def set_playhead(self, time: float) -> None:
+        """Move the playhead to *time* (clamped to [0, duration])."""
         self.playhead = max(0.0, min(time, self.duration))
         self.update()
 
     def add_clip(self, clip: TimelineClip) -> None:
+        """Append *clip* to the timeline and repaint."""
         self.clips.append(clip)
         self.update()
 
     def add_subtitle(self, sub: TimelineSubtitle) -> None:
+        """Append *sub* to the subtitle list and repaint."""
         self.subtitles.append(sub)
         self.update()
 
     def add_background(self, bg: TimelineBackground) -> None:
+        """Append *bg* to the background list and repaint."""
         self.backgrounds.append(bg)
         self.update()
 
     def add_audio(self, audio: TimelineAudio) -> None:
+        """Append *audio* to the audio list and repaint."""
         self.audios.append(audio)
         self.update()
 
     def clear(self) -> None:
+        """Remove all items from every track and repaint."""
         self.clips.clear()
         self.subtitles.clear()
         self.backgrounds.clear()
         self.audios.clear()
         self.update()
 
-    # ── Coordinate helpers ──────────────────────────────────────────────────
-
     def _time_to_x(self, t: float) -> int:
+        """Convert a timeline time in seconds to a pixel x-coordinate."""
         return _LABEL_WIDTH + int(t * self._pixels_per_second)
 
     def _x_to_time(self, x: int) -> float:
+        """Convert a pixel x-coordinate to a timeline time in seconds."""
         return max(0.0, (x - _LABEL_WIDTH) / self._pixels_per_second)
 
     def _row_to_y(self, row: int) -> int:
+        """Return the top y-coordinate of a track row."""
         return _HEADER_HEIGHT + row * _ROW_HEIGHT
 
     def _total_width(self) -> int:
+        """Return the minimum widget width needed to display the full timeline."""
         return _LABEL_WIDTH + int(self.duration * self._pixels_per_second) + 40
 
-    # ── Painting ────────────────────────────────────────────────────────────
-
     def paintEvent(self, event) -> None:  # type: ignore[override]
+        """Render the complete timeline: ruler, rows, clips, and playhead."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        bg_color = QColor("#1E1E2E")
-        painter.fillRect(self.rect(), bg_color)
+        painter.fillRect(self.rect(), QColor("#1E1E2E"))
 
         self._draw_ruler(painter)
         self._draw_rows(painter)
@@ -196,14 +197,14 @@ class TimelineWidget(QWidget):
         self._draw_playhead(painter)
 
     def _draw_ruler(self, painter: QPainter) -> None:
-        ruler_color = QColor("#313244")
-        painter.fillRect(0, 0, self.width(), _HEADER_HEIGHT, ruler_color)
+        """Draw the time ruler at the top of the widget."""
+        painter.fillRect(0, 0, self.width(), _HEADER_HEIGHT, QColor("#313244"))
 
         text_pen = QPen(QColor("#CDD6F4"))
         tick_pen = QPen(QColor("#585B70"))
         painter.setFont(QFont("monospace", 9))
 
-        step = 5.0  # seconds between labels – adapt to zoom
+        step = 5.0
         if self._pixels_per_second > 100:
             step = 1.0
         elif self._pixels_per_second > 40:
@@ -221,29 +222,28 @@ class TimelineWidget(QWidget):
             t += step
 
     def _draw_rows(self, painter: QPainter) -> None:
-        even_color = QColor("#181825")
-        odd_color = QColor("#1E1E2E")
-        label_pen = QPen(QColor("#A6ADC8"))
-        sep_pen = QPen(QColor("#313244"))
-
+        """Draw alternating row backgrounds, labels, and separators."""
         painter.setFont(QFont("sans-serif", 9))
-
         for row, label in enumerate(_ROW_LABELS):
             y = self._row_to_y(row)
-            row_rect = QRect(0, y, self.width(), _ROW_HEIGHT)
-            painter.fillRect(row_rect, even_color if row % 2 == 0 else odd_color)
+            bg = QColor("#181825") if row % 2 == 0 else QColor("#1E1E2E")
+            painter.fillRect(QRect(0, y, self.width(), _ROW_HEIGHT), bg)
+            self._draw_row_label(painter, label, y)
+            self._draw_row_separator(painter, y)
 
-            # Label
-            painter.setPen(label_pen)
-            painter.drawText(
-                QRect(0, y, _LABEL_WIDTH - 4, _ROW_HEIGHT),
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                label,
-            )
+    def _draw_row_label(self, painter: QPainter, label: str, y: int) -> None:
+        """Draw the track name label in the left gutter at row y."""
+        painter.setPen(QPen(QColor("#A6ADC8")))
+        painter.drawText(
+            QRect(0, y, _LABEL_WIDTH - 4, _ROW_HEIGHT),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            label,
+        )
 
-            # Separator
-            painter.setPen(sep_pen)
-            painter.drawLine(0, y + _ROW_HEIGHT - 1, self.width(), y + _ROW_HEIGHT - 1)
+    def _draw_row_separator(self, painter: QPainter, y: int) -> None:
+        """Draw a horizontal separator line at the bottom of the row at y."""
+        painter.setPen(QPen(QColor("#313244")))
+        painter.drawLine(0, y + _ROW_HEIGHT - 1, self.width(), y + _ROW_HEIGHT - 1)
 
     def _draw_block(
         self,
@@ -254,6 +254,7 @@ class TimelineWidget(QWidget):
         color: QColor,
         label: str,
     ) -> None:
+        """Draw a rounded rectangle block for a clip, subtitle, or background."""
         x1 = self._time_to_x(start)
         x2 = self._time_to_x(end)
         y = self._row_to_y(row) + 4
@@ -270,6 +271,7 @@ class TimelineWidget(QWidget):
             painter.drawText(rect.adjusted(4, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter, label)
 
     def _draw_clips(self, painter: QPainter) -> None:
+        """Draw all video clip blocks onto the timeline."""
         for clip in self.clips:
             self._draw_block(
                 painter,
@@ -281,6 +283,7 @@ class TimelineWidget(QWidget):
             )
 
     def _draw_subtitles(self, painter: QPainter) -> None:
+        """Draw all subtitle blocks onto the timeline."""
         for sub in self.subtitles:
             self._draw_block(
                 painter,
@@ -292,6 +295,7 @@ class TimelineWidget(QWidget):
             )
 
     def _draw_backgrounds(self, painter: QPainter) -> None:
+        """Draw all background image blocks onto the timeline."""
         for bg in self.backgrounds:
             label = os.path.basename(bg.image_path) if bg.image_path else "背景"
             self._draw_block(
@@ -304,6 +308,7 @@ class TimelineWidget(QWidget):
             )
 
     def _draw_audios(self, painter: QPainter) -> None:
+        """Draw all audio clip blocks onto the timeline."""
         for audio in self.audios:
             self._draw_block(
                 painter,
@@ -315,45 +320,49 @@ class TimelineWidget(QWidget):
             )
 
     def _draw_playhead(self, painter: QPainter) -> None:
+        """Draw the playhead line and its triangular top marker."""
         x = self._time_to_x(self.playhead)
+        self._draw_playhead_line(painter, x)
+        self._draw_playhead_marker(painter, x)
+
+    def _draw_playhead_line(self, painter: QPainter, x: int) -> None:
+        """Draw the vertical playhead line spanning the full widget height."""
         painter.setPen(QPen(QColor("#F38BA8"), 2))
         painter.drawLine(x, 0, x, self.height())
 
-        # Triangle marker
+    def _draw_playhead_marker(self, painter: QPainter, x: int) -> None:
+        """Draw the downward-pointing triangle at the top of the playhead."""
         painter.setBrush(QBrush(QColor("#F38BA8")))
         painter.setPen(Qt.PenStyle.NoPen)
-        tri = [
-            QPointF(x - 6, 0),
-            QPointF(x + 6, 0),
-            QPointF(x, 10),
-        ]
-        from PyQt6.QtGui import QPolygonF
+        tri = [QPointF(x - 6, 0), QPointF(x + 6, 0), QPointF(x, 10)]
         painter.drawPolygon(QPolygonF(tri))
 
-    # ── Mouse interaction ───────────────────────────────────────────────────
-
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            x = event.position().x()
-            y = event.position().y()
+        """Start dragging an item or move the playhead on left-click."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        x, y = int(event.position().x()), int(event.position().y())
+        target = self._hit_test(x, y)
+        if target is not None:
+            self._start_drag(target, x)
+        else:
+            self._move_playhead_to(x)
 
-            # Check if clicking on a draggable item
-            target = self._hit_test(int(x), int(y))
-            if target is not None:
-                self._drag_target = target
-                self._drag_start_x = int(x)
-                if isinstance(target, TimelineClip):
-                    self._drag_start_time = target.start
-                elif isinstance(target, (TimelineSubtitle, TimelineBackground, TimelineAudio)):
-                    self._drag_start_time = target.start
-            else:
-                # Move playhead
-                t = self._x_to_time(int(x))
-                self.set_playhead(t)
-                self.playhead_moved.emit(self.playhead)
-                self._drag_target = None
+    def _start_drag(self, target: object, x: int) -> None:
+        """Record drag state for *target* starting at pixel column *x*."""
+        self._drag_target = target
+        self._drag_start_x = x
+        self._drag_start_time = target.start  # type: ignore[attr-defined]
+
+    def _move_playhead_to(self, x: int) -> None:
+        """Move the playhead to the time corresponding to pixel column *x*."""
+        t = self._x_to_time(x)
+        self.set_playhead(t)
+        self.playhead_moved.emit(self.playhead)
+        self._drag_target = None
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """Update the position of the item being dragged."""
         if self._drag_target is None:
             return
         dx = int(event.position().x()) - self._drag_start_x
@@ -380,6 +389,7 @@ class TimelineWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """End any active drag operation."""
         self._drag_target = None
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
@@ -425,5 +435,3 @@ class TimelineWidget(QWidget):
 
         return None
 
-
-import os  # noqa: E402  (placed here to avoid circular issues in the module header)

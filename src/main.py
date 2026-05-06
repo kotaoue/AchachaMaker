@@ -2,19 +2,15 @@
 
 import sys
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from src.app import MainWindow
 
 
-def main() -> None:
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-
-    # Dark palette for a modern look
-    from PyQt6.QtGui import QPalette, QColor
-    from PyQt6.QtCore import Qt
-
+def _create_dark_palette() -> QPalette:
+    """Return a Catppuccin Mocha–style dark colour palette."""
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor("#1E1E2E"))
     palette.setColor(QPalette.ColorRole.WindowText, QColor("#CDD6F4"))
@@ -29,8 +25,14 @@ def main() -> None:
     palette.setColor(QPalette.ColorRole.Link, QColor("#89B4FA"))
     palette.setColor(QPalette.ColorRole.Highlight, QColor("#89B4FA"))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#1E1E2E"))
-    app.setPalette(palette)
+    return palette
 
+
+def main() -> None:
+    """Start the AchachaMaker application."""
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    app.setPalette(_create_dark_palette())
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

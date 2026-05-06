@@ -13,6 +13,16 @@ import requests
 
 VOICEVOX_BASE_URL = "http://localhost:50021"
 
+_VOWEL_OPENNESS: dict[str, float] = {
+    "a": 1.0,
+    "i": 0.6,
+    "u": 0.5,
+    "e": 0.7,
+    "o": 0.8,
+    "N": 0.3,
+    "cl": 0.0,
+}
+
 
 @dataclass
 class MoraInfo:
@@ -126,70 +136,53 @@ class VoicevoxClient:
 
         return output_path
 
+    def _lip_frames_for_mora(
+        self, mora: dict, current_time: float, speed: float
+    ) -> tuple[list[LipSyncFrame], float]:
+        """Return lip-sync frames for a single mora and the updated elapsed time.
+
+        Consonants produce a closed-mouth frame; vowels produce a frame whose
+        openness is taken from ``_VOWEL_OPENNESS``.
+        """
+        frames: list[LipSyncFrame] = []
+        consonant_len = mora.get("consonantLength") or 0.0
+        vowel_len = mora.get("vowelLength", 0.0)
+        vowel = mora.get("vowel", "a")
+
+        if consonant_len > 0:
+            frames.append(LipSyncFrame(time=current_time / speed, mouth_open=0.0))
+            current_time += consonant_len
+
+        openness = _VOWEL_OPENNESS.get(vowel, 0.5)
+        frames.append(LipSyncFrame(time=current_time / speed, mouth_open=openness))
+        current_time += vowel_len
+
+        return frames, current_time
+
     def get_lip_sync_frames(
         self, audio_query: dict, fps: float = 30.0
     ) -> list[LipSyncFrame]:
+        """Convert VOICEVOX mora data into lip-sync keyframes.
+
+        Each mora contributes frames for its consonant (mouth closed) and vowel
+        (mouth open proportional to the vowel).  Pauses between accent phrases
+        produce additional closed-mouth frames.
         """
-        Convert VOICEVOX mora information into lip-sync keyframes.
-
-        Each mora contributes a frame when the mouth opens (vowel present)
-        and a frame when the mouth closes (between moras or at pauses).
-        """
-        frames: list[LipSyncFrame] = []
-        current_time = audio_query.get("prePhonemeLength", 0.0)
-        speed = audio_query.get("speedScale", 1.0)
-
-        # Map vowels to approximate mouth-openness values
-        vowel_openness = {
-            "a": 1.0,
-            "i": 0.6,
-            "u": 0.5,
-            "e": 0.7,
-            "o": 0.8,
-            "N": 0.3,
-            "cl": 0.0,
-        }
-
-        frames.append(LipSyncFrame(time=0.0, mouth_open=0.0))
+        frames: list[LipSyncFrame] = [LipSyncFrame(time=0.0, mouth_open=0.0)]
+        current_time: float = audio_query.get("prePhonemeLength", 0.0)
+        speed: float = audio_query.get("speedScale", 1.0)
 
         for phrase in audio_query.get("accentPhrases", []):
             for mora in phrase.get("moras", []):
-                consonant_len = mora.get("consonantLength") or 0.0
-                vowel_len = mora.get("vowelLength", 0.0)
-                vowel = mora.get("vowel", "a")
-
-                # Advance through consonant with mouth closed
-                if consonant_len > 0:
-                    frames.append(
-                        LipSyncFrame(
-                            time=current_time / speed,
-                            mouth_open=0.0,
-                        )
-                    )
-                    current_time += consonant_len
-
-                # Open mouth for vowel
-                openness = vowel_openness.get(vowel, 0.5)
-                frames.append(
-                    LipSyncFrame(
-                        time=current_time / speed,
-                        mouth_open=openness,
-                    )
+                mora_frames, current_time = self._lip_frames_for_mora(
+                    mora, current_time, speed
                 )
-                current_time += vowel_len
+                frames.extend(mora_frames)
 
-            # Pause between phrases
             pause_mora = phrase.get("pauseMora")
             if pause_mora:
-                frames.append(
-                    LipSyncFrame(
-                        time=current_time / speed,
-                        mouth_open=0.0,
-                    )
-                )
+                frames.append(LipSyncFrame(time=current_time / speed, mouth_open=0.0))
                 current_time += pause_mora.get("vowelLength", 0.0)
 
-        # Close mouth at end
         frames.append(LipSyncFrame(time=current_time / speed, mouth_open=0.0))
-
         return frames
