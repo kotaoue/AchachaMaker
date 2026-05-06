@@ -6,8 +6,8 @@ A video maker made by me, for me.
 
 ### Prerequisites
 
-- Python 3.11 or later — install via [Homebrew](https://brew.sh/): `brew install python`
-- ffmpeg — install via Homebrew: `brew install ffmpeg`
+- Python 3.11
+- ffmpeg
 - (Optional) [VOICEVOX](https://voicevox.hiroshiba.jp/) desktop app running locally for voice synthesis
 
 ### Setup
