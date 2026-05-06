@@ -44,6 +44,7 @@ from src.video_processor import (
     VideoExportConfig,
     build_ffmpeg_command,
     export_video,
+    probe_video,
 )
 from src.voicevox import VoicevoxClient
 
@@ -336,14 +337,38 @@ class MainWindow(QMainWindow):
         """Replace the timeline clip for *clip_index* with one built from *path*."""
         label = os.path.basename(path)
         start_spin = self._video1_start if clip_index == 0 else self._video2_start
+        duration = 60.0
+        try:
+            meta = probe_video(path)
+            duration = max(1.0, float(meta.get("duration", 0.0)) - start_spin.value())
+        except Exception:
+            # Fall back to a sane default when ffprobe metadata is unavailable.
+            duration = 60.0
+
         new_clip = TimelineClip(
             label=label,
             start=start_spin.value(),
-            duration=60.0,
+            duration=duration,
             row=clip_index,
         )
         self._timeline.clips = [c for c in self._timeline.clips if c.row != clip_index]
         self._timeline.add_clip(new_clip)
+        self._sync_timeline_and_export_duration()
+
+    def _sync_timeline_and_export_duration(self) -> None:
+        """Extend timeline/export duration to fit the longest clip or track item."""
+        candidates: list[float] = []
+
+        candidates.extend(c.start + c.duration for c in self._timeline.clips)
+        candidates.extend(s.end for s in self._timeline.subtitles)
+        candidates.extend(bg.end for bg in self._timeline.backgrounds)
+        candidates.extend(a.start + a.duration for a in self._timeline.audios)
+
+        required = max(candidates) if candidates else 1.0
+        if self._duration_spin.value() < required:
+            self._duration_spin.setValue(required)
+
+        self._timeline.set_duration(max(self._timeline.duration, required))
 
     def _browse_background(self) -> None:
         """Open a file chooser and populate the background image path field."""
@@ -371,6 +396,7 @@ class MainWindow(QMainWindow):
             color=self._sub_color.text() or "white",
         )
         self._timeline.add_subtitle(sub)
+        self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f'テロップ追加: "{text}"')
 
     def _on_add_background(self) -> None:
@@ -386,6 +412,7 @@ class MainWindow(QMainWindow):
             end=self._bg_end.value(),
         )
         self._timeline.add_background(bg)
+        self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"背景追加: {os.path.basename(path)}")
 
     def _check_voicevox(self) -> None:
@@ -444,6 +471,7 @@ class MainWindow(QMainWindow):
         start = self._vv_start.value()
         audio = TimelineAudio(label=os.path.basename(path), start=start, duration=5.0)
         self._timeline.add_audio(audio)
+        self._sync_timeline_and_export_duration()
         self._vv_status.setText(f"生成完了: {os.path.basename(path)}")
         self.statusBar().showMessage("音声生成完了")
 
@@ -456,6 +484,7 @@ class MainWindow(QMainWindow):
     def _on_clip_moved(self, index: int, new_start: float) -> None:
         """Show the updated clip start time in the status bar."""
         which = "映像1" if index == 0 else "映像2"
+        self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
 
     def _on_export(self) -> None:
