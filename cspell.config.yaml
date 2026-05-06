@@ -4,5 +4,7 @@ dictionaryDefinitions: []
 dictionaries: []
 words:
   - Achacha
+  - venv
+  - VOICEVOX
 ignoreWords: []
 import: []
