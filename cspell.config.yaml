@@ -1,0 +1,44 @@
+version: "0.2"
+ignorePaths: []
+dictionaryDefinitions: []
+dictionaries: []
+words:
+  - abstra
+  - Achacha
+  - celerybeat
+  - codz
+  - Connor
+  - cython
+  - dmypy
+  - envrc
+  - htmlcov
+  - ipynb
+  - ipython
+  - marimo
+  - mkdocs
+  - mnesia
+  - mypy
+  - nosetests
+  - pipenv
+  - Pipfile
+  - pybuilder
+  - pycache
+  - pyenv
+  - pyflow
+  - pypa
+  - pypackages
+  - pypirc
+  - pytest
+  - pytype
+  - ropeproject
+  - scrapy
+  - sdist
+  - Spyder
+  - spyderproject
+  - spyproject
+  - streamlit
+  - venv
+  - VOICEVOX
+  - webassets
+ignoreWords: []
+import: []
