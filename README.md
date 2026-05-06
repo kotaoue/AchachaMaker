@@ -13,23 +13,16 @@ A video maker made by me, for me.
 ### Setup
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/kotaoue/AchachaMaker.git
-cd AchachaMaker
-
-# 2. Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install Python dependencies
 pip install -r requirements.txt
-
-# 4. Run the app
-python main.py
 ```
 
 ### Run Tests
 
 ```bash
 python -m pytest
+
+python main.py
 ```
