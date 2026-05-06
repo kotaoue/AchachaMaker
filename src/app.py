@@ -6,8 +6,10 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject
 from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -167,17 +169,39 @@ class MainWindow(QMainWindow):
         return spin
 
     def _build_preview_panel(self) -> QGroupBox:
-        """Build the preview placeholder panel."""
+        """Build the preview panel with two side-by-side video players."""
         box = QGroupBox("プレビュー")
         layout = QVBoxLayout(box)
 
-        self._preview_label = QLabel("動画ファイルを読み込んでください")
-        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._preview_label.setStyleSheet(
-            "background: #11111B; color: #585B70; border-radius: 4px;"
-        )
-        self._preview_label.setMinimumHeight(200)
-        layout.addWidget(self._preview_label, stretch=1)
+        self._preview_container = QWidget()
+        self._preview_layout = QHBoxLayout(self._preview_container)
+        self._preview_layout.setContentsMargins(0, 0, 0, 0)
+        self._preview_layout.setSpacing(2)
+
+        self._video_widget1 = QVideoWidget()
+        self._video_widget1.setStyleSheet("background: #11111B;")
+        self._video_widget1.setMinimumHeight(200)
+        self._preview_layout.addWidget(self._video_widget1)
+
+        self._video_widget2 = QVideoWidget()
+        self._video_widget2.setStyleSheet("background: #11111B;")
+        self._video_widget2.setMinimumHeight(200)
+        self._preview_layout.addWidget(self._video_widget2)
+
+        layout.addWidget(self._preview_container, stretch=1)
+
+        # Set up media players (audio muted; preview only)
+        self._player1 = QMediaPlayer()
+        self._audio_out1 = QAudioOutput()
+        self._audio_out1.setVolume(0.0)
+        self._player1.setAudioOutput(self._audio_out1)
+        self._player1.setVideoOutput(self._video_widget1)
+
+        self._player2 = QMediaPlayer()
+        self._audio_out2 = QAudioOutput()
+        self._audio_out2.setVolume(0.0)
+        self._player2.setAudioOutput(self._audio_out2)
+        self._player2.setVideoOutput(self._video_widget2)
 
         return box
 
@@ -331,6 +355,7 @@ class MainWindow(QMainWindow):
             return
         line_edit.setText(path)
         self._update_timeline_clip(path, clip_index)
+        self._load_preview(path, clip_index)
         self.statusBar().showMessage(f"映像{clip_index + 1}: {os.path.basename(path)}")
 
     def _update_timeline_clip(self, path: str, clip_index: int) -> None:
@@ -475,8 +500,34 @@ class MainWindow(QMainWindow):
         self._vv_status.setText(f"生成完了: {os.path.basename(path)}")
         self.statusBar().showMessage("音声生成完了")
 
+    def _load_preview(self, path: str, clip_index: int) -> None:
+        """Load a video file into the corresponding preview player and seek to start."""
+        player = self._player1 if clip_index == 0 else self._player2
+        start_spin = self._video1_start if clip_index == 0 else self._video2_start
+        player.setSource(QUrl.fromLocalFile(os.path.abspath(path)))
+        start_ms = int(start_spin.value() * 1000)
+
+        def _seek_after_load(state: QMediaPlayer.MediaStatus) -> None:
+            if state in (
+                QMediaPlayer.MediaStatus.BufferedMedia,
+                QMediaPlayer.MediaStatus.LoadedMedia,
+            ):
+                player.setPosition(start_ms)
+                player.pause()
+                player.mediaStatusChanged.disconnect(_seek_after_load)
+
+        player.mediaStatusChanged.connect(_seek_after_load)
+
     def _on_playhead_moved(self, time: float) -> None:
-        """Show the new playhead position in the status bar."""
+        """Seek both preview players to the playhead time and update the status bar."""
+        for player, spin in [
+            (self._player1, self._video1_start),
+            (self._player2, self._video2_start),
+        ]:
+            if player.source().isValid():
+                pos_ms = int((spin.value() + time) * 1000)
+                player.setPosition(pos_ms)
+                player.pause()
         minutes = int(time) // 60
         secs = int(time) % 60
         self.statusBar().showMessage(f"再生位置: {minutes}:{secs:02d}")
