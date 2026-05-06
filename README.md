@@ -6,23 +6,20 @@ A video maker made by me, for me.
 
 ### Prerequisites
 
-- Python 3.11
+- [uv](https://docs.astral.sh/uv/)
 - ffmpeg
 - (Optional) [VOICEVOX](https://voicevox.hiroshiba.jp/) desktop app running locally for voice synthesis
 
 ### Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-
-pip install -r requirements.txt
+uv sync
 ```
 
 ### Run Tests
 
 ```bash
-python -m pytest
+uv run pytest
 
-python main.py
+uv run python main.py
 ```
