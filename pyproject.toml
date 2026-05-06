@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
     "PyQt6>=6.6.0",
     "ffmpeg-python>=0.2.0",
-    "requests>=2.31.0",
+    "requests>=2.33.1",
 ]
 
 [dependency-groups]
