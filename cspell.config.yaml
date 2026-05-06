@@ -4,6 +4,7 @@ dictionaryDefinitions: []
 dictionaries: []
 words:
   - Achacha
+  - pytest
   - venv
   - VOICEVOX
 ignoreWords: []
