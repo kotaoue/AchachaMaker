@@ -185,6 +185,7 @@ def _build_output_args(
         "-b:v", config.video_bitrate,
         "-r", str(config.fps),
         "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
         config.output_path,
     ]
     return args

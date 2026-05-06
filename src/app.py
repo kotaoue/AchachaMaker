@@ -556,5 +556,5 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 signals.error.emit(str(e))
 
-        t = threading.Thread(target=run, daemon=True)
+        t = threading.Thread(target=run, daemon=False)
         t.start()
