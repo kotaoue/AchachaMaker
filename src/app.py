@@ -224,6 +224,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumHeight(240)
 
         # Container for timeline with bottom padding
         timeline_container = QWidget()
@@ -235,7 +236,6 @@ class MainWindow(QMainWindow):
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
         timeline_layout.addWidget(self._timeline)
-        timeline_layout.addSpacing(16)
 
         scroll.setWidget(timeline_container)
 
