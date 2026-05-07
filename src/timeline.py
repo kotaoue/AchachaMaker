@@ -122,6 +122,9 @@ class TimelineWidget(QWidget):
         self._drag_start_x: int = 0
         self._drag_start_time: float = 0.0
 
+        self._zoom_unit: str = "seconds"  # zoom unit: "seconds" or "frames"
+        self._fps: float = 30.0  # frames per second for frame-based zoom
+
         self.setMinimumHeight(
             _HEADER_HEIGHT + _ROW_HEIGHT * len(_ROW_LABELS) + 20
         )
@@ -135,6 +138,15 @@ class TimelineWidget(QWidget):
     def set_playhead(self, time: float) -> None:
         """Move the playhead to *time* (clamped to [0, duration])."""
         self.playhead = max(0.0, min(time, self.duration))
+            def set_zoom_unit(self, unit: str) -> None:
+                """Set zoom unit: 'seconds' or 'frames'."""
+                self._zoom_unit = unit
+                self.update()
+
+            def set_fps(self, fps: float) -> None:
+                """Set the frame rate for frame-based zoom."""
+                self._fps = max(1.0, fps)
+
         self.update()
 
     def add_clip(self, clip: TimelineClip) -> None:
@@ -407,10 +419,22 @@ class TimelineWidget(QWidget):
         """Zoom the timeline in/out with the scroll wheel."""
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
-        self._pixels_per_second = max(
-            _MIN_PIXELS_PER_SECOND,
-            min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
-        )
+        
+        if self._zoom_unit == "frames":
+            # Frame-based zoom: calculate pixels per frame
+            pixels_per_frame = self._pixels_per_second / self._fps
+            pixels_per_frame = max(
+                _MIN_PIXELS_PER_SECOND / self._fps,
+                min(_MAX_PIXELS_PER_SECOND / self._fps, pixels_per_frame * factor),
+            )
+            self._pixels_per_second = pixels_per_frame * self._fps
+        else:
+            # Second-based zoom (default)
+            self._pixels_per_second = max(
+                _MIN_PIXELS_PER_SECOND,
+                min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
+            )
+        
         self.setMinimumWidth(self._total_width())
         self.update()
 

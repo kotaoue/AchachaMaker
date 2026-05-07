@@ -218,6 +218,19 @@ class MainWindow(QMainWindow):
     def _build_timeline_panel(self) -> QGroupBox:
         """Build the scrollable timeline panel."""
         box = QGroupBox("タイムライン  （ホイールでズーム）")
+            # Zoom unit selector
+            zoom_controls = QWidget()
+            zoom_layout = QHBoxLayout(zoom_controls)
+            zoom_layout.setContentsMargins(0, 0, 0, 0)
+            zoom_label = QLabel("ズーム単位:")
+            self._zoom_unit_combo = QComboBox()
+            self._zoom_unit_combo.addItems(["秒", "フレーム"])
+            self._zoom_unit_combo.currentTextChanged.connect(self._on_zoom_unit_changed)
+            zoom_layout.addWidget(zoom_label)
+            zoom_layout.addWidget(self._zoom_unit_combo)
+            zoom_layout.addStretch()
+            layout.addWidget(zoom_controls)
+
         layout = QVBoxLayout(box)
 
         scroll = QScrollArea()
@@ -236,6 +249,9 @@ class MainWindow(QMainWindow):
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
         timeline_layout.addWidget(self._timeline)
+    timeline_layout.addSpacing(48)
+    timeline_layout.addStretch()
+
 
         scroll.setWidget(timeline_container)
 
@@ -557,6 +573,11 @@ class MainWindow(QMainWindow):
         which = "映像1" if index == 0 else "映像2"
         self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
+    def _on_zoom_unit_changed(self, unit_text: str) -> None:
+        """Update timeline zoom unit when user changes the dropdown."""
+        zoom_unit = "frames" if unit_text == "フレーム" else "seconds"
+        self._timeline.set_zoom_unit(zoom_unit)
+
 
     def _on_export(self) -> None:
         """Validate inputs, collect configuration, and run ffmpeg export asynchronously."""
