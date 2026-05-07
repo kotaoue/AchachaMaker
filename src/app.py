@@ -6,7 +6,7 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QStandardPaths
 from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -66,11 +66,21 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("ゲーム解説動画メーカー – AchachaMaker")
         self.resize(1280, 800)
+        self._settings = QSettings("kotaoue", "AchachaMaker")
         self._voicevox = VoicevoxClient()
         self._audio_path: Optional[str] = None
         self._speakers: list[dict] = []
         self._setup_ui()
         self._check_voicevox()
+
+    def _default_video_dir(self) -> str:
+        """Return the user's Movies folder, falling back to the home directory."""
+        movies_dirs = QStandardPaths.standardLocations(
+            QStandardPaths.StandardLocation.MoviesLocation
+        )
+        if movies_dirs and os.path.isdir(movies_dirs[0]):
+            return movies_dirs[0]
+        return os.path.expanduser("~")
 
     def _setup_ui(self) -> None:
         """Build and wire the entire UI hierarchy."""
@@ -345,14 +355,16 @@ class MainWindow(QMainWindow):
 
     def _browse_video(self, line_edit: QLineEdit, clip_index: int) -> None:
         """Open a file chooser, update the path field, and refresh the timeline clip."""
+        start_dir = self._settings.value("last_input_dir", self._default_video_dir())
         path, _ = QFileDialog.getOpenFileName(
             self,
             "動画ファイルを選択",
-            "",
+            start_dir,
             "動画ファイル (*.mp4 *.mov *.avi *.mkv *.webm);;すべてのファイル (*)",
         )
         if not path:
             return
+        self._settings.setValue("last_input_dir", os.path.dirname(path))
         line_edit.setText(path)
         self._update_timeline_clip(path, clip_index)
         self._load_preview(path, clip_index)
@@ -547,14 +559,17 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "エラー", "動画ファイルを 2 本選択してください。")
             return
 
+        last_output_dir = self._settings.value("last_output_dir", self._default_video_dir())
+        default_output = os.path.join(last_output_dir, "output.mp4")
         out_path, _ = QFileDialog.getSaveFileName(
             self,
             "書き出し先を選択",
-            "output.mp4",
+            default_output,
             "MP4 ファイル (*.mp4)",
         )
         if not out_path:
             return
+        self._settings.setValue("last_output_dir", os.path.dirname(out_path))
 
         config = self._build_export_config(v1, v2, out_path)
         self._run_export_async(config, out_path)
