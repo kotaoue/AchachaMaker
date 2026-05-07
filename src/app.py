@@ -218,20 +218,20 @@ class MainWindow(QMainWindow):
     def _build_timeline_panel(self) -> QGroupBox:
         """Build the scrollable timeline panel."""
         box = QGroupBox("タイムライン  （ホイールでズーム）")
-            # Zoom unit selector
-            zoom_controls = QWidget()
-            zoom_layout = QHBoxLayout(zoom_controls)
-            zoom_layout.setContentsMargins(0, 0, 0, 0)
-            zoom_label = QLabel("ズーム単位:")
-            self._zoom_unit_combo = QComboBox()
-            self._zoom_unit_combo.addItems(["秒", "フレーム"])
-            self._zoom_unit_combo.currentTextChanged.connect(self._on_zoom_unit_changed)
-            zoom_layout.addWidget(zoom_label)
-            zoom_layout.addWidget(self._zoom_unit_combo)
-            zoom_layout.addStretch()
-            layout.addWidget(zoom_controls)
-
         layout = QVBoxLayout(box)
+
+        # Zoom unit selector
+        zoom_controls = QWidget()
+        zoom_layout = QHBoxLayout(zoom_controls)
+        zoom_layout.setContentsMargins(0, 0, 0, 0)
+        zoom_label = QLabel("ズーム単位:")
+        self._zoom_unit_combo = QComboBox()
+        self._zoom_unit_combo.addItems(["秒", "フレーム"])
+        self._zoom_unit_combo.currentTextChanged.connect(self._on_zoom_unit_changed)
+        zoom_layout.addWidget(zoom_label)
+        zoom_layout.addWidget(self._zoom_unit_combo)
+        zoom_layout.addStretch()
+        layout.addWidget(zoom_controls)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -249,9 +249,9 @@ class MainWindow(QMainWindow):
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
         timeline_layout.addWidget(self._timeline)
-    timeline_layout.addSpacing(48)
-    timeline_layout.addStretch()
 
+        timeline_layout.addSpacing(48)
+        timeline_layout.addStretch()
 
         scroll.setWidget(timeline_container)
 

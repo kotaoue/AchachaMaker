@@ -138,16 +138,16 @@ class TimelineWidget(QWidget):
     def set_playhead(self, time: float) -> None:
         """Move the playhead to *time* (clamped to [0, duration])."""
         self.playhead = max(0.0, min(time, self.duration))
-            def set_zoom_unit(self, unit: str) -> None:
-                """Set zoom unit: 'seconds' or 'frames'."""
-                self._zoom_unit = unit
-                self.update()
-
-            def set_fps(self, fps: float) -> None:
-                """Set the frame rate for frame-based zoom."""
-                self._fps = max(1.0, fps)
-
         self.update()
+
+    def set_zoom_unit(self, unit: str) -> None:
+        """Set zoom unit: 'seconds' or 'frames'."""
+        self._zoom_unit = unit
+        self.update()
+
+    def set_fps(self, fps: float) -> None:
+        """Set the frame rate for frame-based zoom."""
+        self._fps = max(1.0, fps)
 
     def add_clip(self, clip: TimelineClip) -> None:
         """Append *clip* to the timeline and repaint."""
@@ -419,7 +419,7 @@ class TimelineWidget(QWidget):
         """Zoom the timeline in/out with the scroll wheel."""
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
-        
+
         if self._zoom_unit == "frames":
             # Frame-based zoom: calculate pixels per frame
             pixels_per_frame = self._pixels_per_second / self._fps
@@ -434,7 +434,7 @@ class TimelineWidget(QWidget):
                 _MIN_PIXELS_PER_SECOND,
                 min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
             )
-        
+
         self.setMinimumWidth(self._total_width())
         self.update()
 
