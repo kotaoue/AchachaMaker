@@ -327,14 +327,14 @@ class TimelineWidget(QWidget):
 
     def _draw_playhead_line(self, painter: QPainter, x: int) -> None:
         """Draw the vertical playhead line spanning the full widget height."""
-        painter.setPen(QPen(QColor("#F38BA8"), 2))
+        painter.setPen(QPen(QColor("#F38BA8"), 4))
         painter.drawLine(x, 0, x, self.height())
 
     def _draw_playhead_marker(self, painter: QPainter, x: int) -> None:
         """Draw the downward-pointing triangle at the top of the playhead."""
         painter.setBrush(QBrush(QColor("#F38BA8")))
         painter.setPen(Qt.PenStyle.NoPen)
-        tri = [QPointF(x - 6, 0), QPointF(x + 6, 0), QPointF(x, 10)]
+        tri = [QPointF(x - 8, 0), QPointF(x + 8, 0), QPointF(x, 12)]
         painter.drawPolygon(QPolygonF(tri))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
@@ -352,7 +352,11 @@ class TimelineWidget(QWidget):
         """Record drag state for *target* starting at pixel column *x*."""
         self._drag_target = target
         self._drag_start_x = x
-        self._drag_start_time = target.start  # type: ignore[attr-defined]
+        if target is self:
+            # Playhead dragging
+            self._drag_start_time = self.playhead
+        else:
+            self._drag_start_time = target.start  # type: ignore[attr-defined]
 
     def _move_playhead_to(self, x: int) -> None:
         """Move the playhead to the time corresponding to pixel column *x*."""
@@ -367,26 +371,33 @@ class TimelineWidget(QWidget):
             return
         dx = int(event.position().x()) - self._drag_start_x
         dt = dx / self._pixels_per_second
-        new_start = max(0.0, self._drag_start_time + dt)
 
-        if isinstance(self._drag_target, TimelineClip):
-            idx = self.clips.index(self._drag_target)
-            self._drag_target.start = new_start
-            self.clip_moved.emit(idx, new_start)
-        elif isinstance(self._drag_target, TimelineSubtitle):
-            idx = self.subtitles.index(self._drag_target)
-            dur = self._drag_target.end - self._drag_target.start
-            self._drag_target.start = new_start
-            self._drag_target.end = new_start + dur
-            self.subtitle_moved.emit(idx, new_start, new_start + dur)
-        elif isinstance(self._drag_target, TimelineBackground):
-            dur = self._drag_target.end - self._drag_target.start
-            self._drag_target.start = new_start
-            self._drag_target.end = new_start + dur
-        elif isinstance(self._drag_target, TimelineAudio):
-            self._drag_target.start = new_start
+        if self._drag_target is self:
+            # Playhead dragging
+            new_playhead = max(0.0, min(self._drag_start_time + dt, self.duration))
+            self.set_playhead(new_playhead)
+            self.playhead_moved.emit(self.playhead)
+        else:
+            new_start = max(0.0, self._drag_start_time + dt)
 
-        self.update()
+            if isinstance(self._drag_target, TimelineClip):
+                idx = self.clips.index(self._drag_target)
+                self._drag_target.start = new_start
+                self.clip_moved.emit(idx, new_start)
+            elif isinstance(self._drag_target, TimelineSubtitle):
+                idx = self.subtitles.index(self._drag_target)
+                dur = self._drag_target.end - self._drag_target.start
+                self._drag_target.start = new_start
+                self._drag_target.end = new_start + dur
+                self.subtitle_moved.emit(idx, new_start, new_start + dur)
+            elif isinstance(self._drag_target, TimelineBackground):
+                dur = self._drag_target.end - self._drag_target.start
+                self._drag_target.start = new_start
+                self._drag_target.end = new_start + dur
+            elif isinstance(self._drag_target, TimelineAudio):
+                self._drag_target.start = new_start
+
+            self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         """End any active drag operation."""
@@ -405,6 +416,11 @@ class TimelineWidget(QWidget):
 
     def _hit_test(self, x: int, y: int) -> Optional[object]:
         """Return the item under the cursor, or None."""
+        # Check if playhead is clicked (wider hit area for easier interaction)
+        playhead_x = self._time_to_x(self.playhead)
+        if abs(x - playhead_x) <= 6 and y < _HEADER_HEIGHT:
+            return self
+
         for clip in self.clips:
             row_y = self._row_to_y(clip.row)
             x1 = self._time_to_x(clip.start)
