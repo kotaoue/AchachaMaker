@@ -255,7 +255,7 @@ class TimelineWidget(QWidget):
 
     def _draw_rows(self, painter: QPainter) -> None:
         """Draw alternating row backgrounds, labels, and separators."""
-        painter.setFont(QFont("sans-serif", 9))
+        painter.setFont(QFont("Hiragino Sans", 9))
         for row, label in enumerate(_ROW_LABELS):
             y = self._row_to_y(row)
             bg = QColor("#181825") if row % 2 == 0 else QColor("#1E1E2E")
@@ -299,7 +299,7 @@ class TimelineWidget(QWidget):
 
         if x2 - x1 > 20:
             painter.setPen(QPen(QColor("#1E1E2E")))
-            painter.setFont(QFont("sans-serif", 9))
+            painter.setFont(QFont("Hiragino Sans", 9))
             painter.drawText(rect.adjusted(4, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter, label)
 
     def _draw_clips(self, painter: QPainter) -> None:
