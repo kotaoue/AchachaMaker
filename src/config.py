@@ -20,16 +20,16 @@ def get_font(family_size_tuple: tuple[str, int] = ("default", 9)) -> QFont:
 
     # Font families by OS and style
     fonts = {
-        ("monospace", "Darwin"): "Menlo",
-        ("monospace", "Windows"): "Courier New",
-        ("monospace", "Linux"): "Noto Mono",
-        ("default", "Darwin"): "Hiragino Sans",
-        ("default", "Windows"): "Yu Gothic",
-        ("default", "Linux"): "Noto Sans CJK JP",
+        ("Darwin", "monospace"): "Menlo",
+        ("Darwin", "default"): "Hiragino Sans",
+        ("Windows", "monospace"): "Courier New",
+        ("Windows", "default"): "Yu Gothic",
+        ("Linux", "monospace"): "Noto Mono",
+        ("Linux", "default"): "Noto Sans CJK JP",
     }
 
-    key = (font_style, system)
-    font_family = fonts.get(key, fonts.get((font_style, "Linux")))  # Default to Linux fallback
+    key = (system, font_style)
+    font_family = fonts.get(key, fonts.get(("Linux", font_style)))  # Default to Linux fallback
     return QFont(font_family, size)
 
 
