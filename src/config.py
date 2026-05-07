@@ -18,24 +18,19 @@ def get_font(family_size_tuple: tuple[str, int] = ("default", 9)) -> QFont:
     font_style, size = family_size_tuple
     system = platform.system()
 
-    if font_style == "monospace":
-        if system == "Darwin":
-            return QFont("Menlo", size)
-        elif system == "Windows":
-            return QFont("Courier New", size)
-        else:  # Linux
-            return QFont("Noto Mono", size)
+    # Font families by OS and style
+    fonts = {
+        ("monospace", "Darwin"): "Menlo",
+        ("monospace", "Windows"): "Courier New",
+        ("monospace", "Linux"): "Noto Mono",
+        ("default", "Darwin"): "Hiragino Sans",
+        ("default", "Windows"): "Yu Gothic",
+        ("default", "Linux"): "Noto Sans CJK JP",
+    }
 
-    # Default (serif/sans-serif mix for better CJK support)
-    if system == "Darwin":
-        # macOS: Use Hiragino Sans for Japanese support
-        return QFont("Hiragino Sans", size)
-    elif system == "Windows":
-        # Windows: Yu Gothic is excellent for Japanese on Windows
-        return QFont("Yu Gothic", size)
-    else:
-        # Linux: Use system sans-serif (usually good CJK support)
-        return QFont("Noto Sans CJK JP", size)
+    key = (font_style, system)
+    font_family = fonts.get(key, fonts.get((font_style, "Linux")))  # Default to Linux fallback
+    return QFont(font_family, size)
 
 
 # Preset font configurations for common use cases
