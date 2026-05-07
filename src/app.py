@@ -142,15 +142,6 @@ class MainWindow(QMainWindow):
         self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
 
-        self._duration_spin = QDoubleSpinBox()
-        self._duration_spin.setRange(1, 3600)
-        self._duration_spin.setValue(60)
-        self._duration_spin.setSuffix(" 秒")
-        self._duration_spin.valueChanged.connect(
-            lambda v: self._timeline.set_duration(v)
-        )
-        layout.addRow("書き出し時間:", self._duration_spin)
-
         return box
 
     def _build_video_file_row(
@@ -220,7 +211,7 @@ class MainWindow(QMainWindow):
         box = QGroupBox("タイムライン  （ホイールでズーム）")
         layout = QVBoxLayout(box)
 
-        # Zoom ratio selector
+        # Zoom ratio selector and export duration
         zoom_controls = QWidget()
         zoom_layout = QHBoxLayout(zoom_controls)
         zoom_layout.setContentsMargins(0, 0, 0, 0)
@@ -232,6 +223,18 @@ class MainWindow(QMainWindow):
         zoom_layout.addWidget(zoom_label)
         zoom_layout.addWidget(self._zoom_ratio_combo)
         zoom_layout.addStretch()
+
+        # Export duration (right-aligned)
+        duration_label = QLabel("書き出し時間:")
+        self._duration_spin = QDoubleSpinBox()
+        self._duration_spin.setRange(1, 3600)
+        self._duration_spin.setValue(60)
+        self._duration_spin.setSuffix(" 秒")
+        self._duration_spin.valueChanged.connect(
+            lambda v: self._timeline.set_duration(v)
+        )
+        zoom_layout.addWidget(duration_label)
+        zoom_layout.addWidget(self._duration_spin)
         layout.addWidget(zoom_controls)
 
         scroll = QScrollArea()
