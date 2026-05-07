@@ -225,11 +225,19 @@ class MainWindow(QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
+        # Container for timeline with bottom padding
+        timeline_container = QWidget()
+        timeline_layout = QVBoxLayout(timeline_container)
+        timeline_layout.setContentsMargins(0, 0, 0, 0)
+
         self._timeline = TimelineWidget()
         self._timeline.set_duration(self._duration_spin.value() if hasattr(self, "_duration_spin") else 60)
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
-        scroll.setWidget(self._timeline)
+        timeline_layout.addWidget(self._timeline)
+        timeline_layout.addSpacing(16)
+
+        scroll.setWidget(timeline_container)
 
         layout.addWidget(scroll)
         return box
