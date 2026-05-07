@@ -46,6 +46,7 @@ from src.video_processor import (
     SubtitleEntry,
     VideoExportConfig,
     build_ffmpeg_command,
+    detect_black_frames,
     export_video,
     probe_video,
 )
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
         self._voicevox = VoicevoxClient()
         self._audio_path: Optional[str] = None
         self._speakers: list[dict] = []
+        self._video_black_frames: dict[int, list[float]] = {0: [], 1: []}
         self._setup_ui()
         self._check_voicevox()
 
@@ -136,11 +138,19 @@ class MainWindow(QMainWindow):
         layout.addRow("映像 1:", row1)
         self._video1_start = self._build_start_spinbox()
         layout.addRow("開始位置 1:", self._video1_start)
+        self._video1_black = QLineEdit()
+        self._video1_black.setReadOnly(True)
+        self._video1_black.setPlaceholderText("黒フレームなし")
+        layout.addRow("黒フレーム 1:", self._video1_black)
 
         self._video2_path, row2 = self._build_video_file_row("動画ファイル 2 のパス", 1)
         layout.addRow("映像 2:", row2)
         self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
+        self._video2_black = QLineEdit()
+        self._video2_black.setReadOnly(True)
+        self._video2_black.setPlaceholderText("黒フレームなし")
+        layout.addRow("黒フレーム 2:", self._video2_black)
 
         return box
 
@@ -402,8 +412,26 @@ class MainWindow(QMainWindow):
         self._settings.setValue("last_input_dir", os.path.dirname(path))
         line_edit.setText(path)
         self._update_timeline_clip(path, clip_index)
+        try:
+            self._video_black_frames[clip_index] = detect_black_frames(path)
+        except Exception:
+            self._video_black_frames[clip_index] = []
+        self._refresh_black_frame_ui()
         self._load_preview(path, clip_index)
         self.statusBar().showMessage(f"映像{clip_index + 1}: {os.path.basename(path)}")
+
+    def _refresh_black_frame_ui(self) -> None:
+        """Refresh black-frame text fields and timeline markers."""
+        self._video1_black.setText(self._format_black_frame_times(self._video_black_frames[0]))
+        self._video2_black.setText(self._format_black_frame_times(self._video_black_frames[1]))
+        merged = self._video_black_frames[0] + self._video_black_frames[1]
+        self._timeline.set_black_markers(merged)
+
+    def _format_black_frame_times(self, frames: list[float]) -> str:
+        """Format black-frame times for compact display."""
+        if not frames:
+            return "なし"
+        return ", ".join(f"{t:.2f}s" for t in frames[:20])
 
     def _update_timeline_clip(self, path: str, clip_index: int) -> None:
         """Replace the timeline clip for *clip_index* with one built from *path*."""

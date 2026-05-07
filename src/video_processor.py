@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -266,3 +267,27 @@ def probe_video(path: str) -> dict:
         "height": int(stream.get("height", 0)),
         "fps": fps,
     }
+
+
+def _parse_blackdetect_output(stderr: str) -> list[float]:
+    """Extract black segment start times from ffmpeg blackdetect output."""
+    starts = [float(m.group(1)) for m in re.finditer(r"black_start:([0-9.]+)", stderr)]
+    return sorted(set(starts))
+
+
+def detect_black_frames(path: str) -> list[float]:
+    """Return black-frame segment start times (seconds) detected in *path*."""
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        path,
+        "-vf",
+        "blackdetect=d=0:pix_th=0.00:pic_th=1.0",
+        "-an",
+        "-f",
+        "null",
+        "-",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return _parse_blackdetect_output(result.stderr)
