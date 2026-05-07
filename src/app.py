@@ -6,7 +6,7 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QStandardPaths
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
 from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -220,16 +220,17 @@ class MainWindow(QMainWindow):
         box = QGroupBox("タイムライン  （ホイールでズーム）")
         layout = QVBoxLayout(box)
 
-        # Zoom unit selector
+        # Zoom ratio selector
         zoom_controls = QWidget()
         zoom_layout = QHBoxLayout(zoom_controls)
         zoom_layout.setContentsMargins(0, 0, 0, 0)
-        zoom_label = QLabel("ズーム単位:")
-        self._zoom_unit_combo = QComboBox()
-        self._zoom_unit_combo.addItems(["秒", "フレーム"])
-        self._zoom_unit_combo.currentTextChanged.connect(self._on_zoom_unit_changed)
+        zoom_label = QLabel("ズーム:")
+        self._zoom_ratio_combo = QComboBox()
+        for step_seconds in (0.5, 1.0, 2.0, 5.0):
+            self._zoom_ratio_combo.addItem(f"1マス {step_seconds:g}秒", step_seconds)
+        self._zoom_ratio_combo.currentIndexChanged.connect(self._on_zoom_ratio_changed)
         zoom_layout.addWidget(zoom_label)
-        zoom_layout.addWidget(self._zoom_unit_combo)
+        zoom_layout.addWidget(self._zoom_ratio_combo)
         zoom_layout.addStretch()
         layout.addWidget(zoom_controls)
 
@@ -248,7 +249,10 @@ class MainWindow(QMainWindow):
         self._timeline.set_duration(self._duration_spin.value() if hasattr(self, "_duration_spin") else 60)
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
+        self._timeline.zoom_ratio_changed.connect(self._sync_zoom_ratio_combo)
         timeline_layout.addWidget(self._timeline)
+
+        self._sync_zoom_ratio_combo(self._timeline.current_zoom_step_seconds())
 
         timeline_layout.addSpacing(48)
         timeline_layout.addStretch()
@@ -573,10 +577,21 @@ class MainWindow(QMainWindow):
         which = "映像1" if index == 0 else "映像2"
         self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
-    def _on_zoom_unit_changed(self, unit_text: str) -> None:
-        """Update timeline zoom unit when user changes the dropdown."""
-        zoom_unit = "frames" if unit_text == "フレーム" else "seconds"
-        self._timeline.set_zoom_unit(zoom_unit)
+    def _on_zoom_ratio_changed(self, index: int) -> None:
+        """Update timeline zoom ratio when user changes the dropdown."""
+        step_seconds = self._zoom_ratio_combo.itemData(index)
+        if step_seconds is None:
+            return
+        self._timeline.set_zoom_step_seconds(float(step_seconds))
+
+    def _sync_zoom_ratio_combo(self, step_seconds: float) -> None:
+        """Keep the zoom ratio dropdown in sync with wheel-based zoom changes."""
+        for index in range(self._zoom_ratio_combo.count()):
+            if float(self._zoom_ratio_combo.itemData(index)) == step_seconds:
+                blocker = QSignalBlocker(self._zoom_ratio_combo)
+                self._zoom_ratio_combo.setCurrentIndex(index)
+                del blocker
+                break
 
 
     def _on_export(self) -> None:

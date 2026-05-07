@@ -84,6 +84,7 @@ _ROW_HEIGHT = 36  # pixels per track row
 _LABEL_WIDTH = 60  # pixels for row labels on the left
 _MIN_PIXELS_PER_SECOND = 20
 _MAX_PIXELS_PER_SECOND = 300
+_ZOOM_STEP_SECONDS = (0.5, 1.0, 2.0, 5.0)
 
 
 class TimelineWidget(QWidget):
@@ -105,6 +106,7 @@ class TimelineWidget(QWidget):
     playhead_moved = pyqtSignal(float)
     clip_moved = pyqtSignal(int, float)
     subtitle_moved = pyqtSignal(int, float, float)
+    zoom_ratio_changed = pyqtSignal(float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -117,13 +119,11 @@ class TimelineWidget(QWidget):
         self.duration: float = 120.0  # timeline total length in seconds
         self.playhead: float = 0.0  # current playhead position in seconds
         self._pixels_per_second: float = 80.0
+        self._zoom_step_seconds: float = 2.0
 
         self._drag_target: Optional[object] = None  # item being dragged
         self._drag_start_x: int = 0
         self._drag_start_time: float = 0.0
-
-        self._zoom_unit: str = "seconds"  # zoom unit: "seconds" or "frames"
-        self._fps: float = 30.0  # frames per second for frame-based zoom
 
         self.setMinimumHeight(
             _HEADER_HEIGHT + _ROW_HEIGHT * len(_ROW_LABELS) + 20
@@ -140,14 +140,38 @@ class TimelineWidget(QWidget):
         self.playhead = max(0.0, min(time, self.duration))
         self.update()
 
-    def set_zoom_unit(self, unit: str) -> None:
-        """Set zoom unit: 'seconds' or 'frames'."""
-        self._zoom_unit = unit
+    def current_zoom_step_seconds(self) -> float:
+        """Return the current major ruler interval in seconds."""
+        return self._zoom_step_seconds
+
+    def set_zoom_step_seconds(self, seconds: float) -> None:
+        """Set the major ruler interval and adjust zoom to a matching scale."""
+        step = min(_ZOOM_STEP_SECONDS, key=lambda candidate: abs(candidate - seconds))
+        self._zoom_step_seconds = step
+
+        target_pixels_per_second = {
+            0.5: 220.0,
+            1.0: 120.0,
+            2.0: 80.0,
+            5.0: 32.0,
+        }[step]
+        self._pixels_per_second = max(
+            _MIN_PIXELS_PER_SECOND,
+            min(_MAX_PIXELS_PER_SECOND, target_pixels_per_second),
+        )
+        self.setMinimumWidth(self._total_width())
+        self.zoom_ratio_changed.emit(self._zoom_step_seconds)
         self.update()
 
-    def set_fps(self, fps: float) -> None:
-        """Set the frame rate for frame-based zoom."""
-        self._fps = max(1.0, fps)
+    def _zoom_step_for_pixels_per_second(self, pixels_per_second: float) -> float:
+        """Return the ruler interval that best matches the current zoom level."""
+        if pixels_per_second >= 170.0:
+            return 0.5
+        if pixels_per_second >= 95.0:
+            return 1.0
+        if pixels_per_second >= 48.0:
+            return 2.0
+        return 5.0
 
     def add_clip(self, clip: TimelineClip) -> None:
         """Append *clip* to the timeline and repaint."""
@@ -216,11 +240,7 @@ class TimelineWidget(QWidget):
         tick_pen = QPen(QColor("#585B70"))
         painter.setFont(QFont("monospace", 9))
 
-        step = 5.0
-        if self._pixels_per_second > 100:
-            step = 1.0
-        elif self._pixels_per_second > 40:
-            step = 2.0
+        step = self._zoom_step_seconds
 
         t = 0.0
         while t <= self.duration:
@@ -420,20 +440,15 @@ class TimelineWidget(QWidget):
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
 
-        if self._zoom_unit == "frames":
-            # Frame-based zoom: calculate pixels per frame
-            pixels_per_frame = self._pixels_per_second / self._fps
-            pixels_per_frame = max(
-                _MIN_PIXELS_PER_SECOND / self._fps,
-                min(_MAX_PIXELS_PER_SECOND / self._fps, pixels_per_frame * factor),
-            )
-            self._pixels_per_second = pixels_per_frame * self._fps
-        else:
-            # Second-based zoom (default)
-            self._pixels_per_second = max(
-                _MIN_PIXELS_PER_SECOND,
-                min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
-            )
+        self._pixels_per_second = max(
+            _MIN_PIXELS_PER_SECOND,
+            min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
+        )
+
+        zoom_step_seconds = self._zoom_step_for_pixels_per_second(self._pixels_per_second)
+        if zoom_step_seconds != self._zoom_step_seconds:
+            self._zoom_step_seconds = zoom_step_seconds
+            self.zoom_ratio_changed.emit(self._zoom_step_seconds)
 
         self.setMinimumWidth(self._total_width())
         self.update()
