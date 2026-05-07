@@ -142,10 +142,6 @@ class MainWindow(QMainWindow):
         self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
 
-        self._layout_combo = QComboBox()
-        self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
-        layout.addRow("レイアウト:", self._layout_combo)
-
         self._duration_spin = QDoubleSpinBox()
         self._duration_spin.setRange(1, 3600)
         self._duration_spin.setValue(60)
@@ -330,6 +326,10 @@ class MainWindow(QMainWindow):
         bg_row_layout.addWidget(self._bg_path)
         bg_row_layout.addWidget(bg_browse)
         layout.addRow("背景画像:", bg_row)
+
+        self._layout_combo = QComboBox()
+        self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
+        layout.addRow("レイアウト:", self._layout_combo)
 
         self._bg_start = QDoubleSpinBox()
         self._bg_start.setRange(0, 9999)
