@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
 
     def _build_timeline_panel(self) -> QGroupBox:
         """Build the scrollable timeline panel."""
-        box = QGroupBox("タイムライン  （ホイールでズーム、アイテムやプレイヘッドをドラッグで移動）")
+        box = QGroupBox("タイムライン  （ホイールでズーム）")
         layout = QVBoxLayout(box)
 
         scroll = QScrollArea()
