@@ -282,6 +282,10 @@ def detect_black_frames(path: str) -> list[float]:
         "-hide_banner",
         "-i",
         path,
+        # Detect only fully black frames:
+        # - d=0: allow very short black segments
+        # - pix_th=0.00: treat only exact black pixels as black
+        # - pic_th=1.0: require the whole frame to be black
         "-vf",
         "blackdetect=d=0:pix_th=0.00:pic_th=1.0",
         "-an",
@@ -289,5 +293,8 @@ def detect_black_frames(path: str) -> list[float]:
         "null",
         "-",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
     return _parse_blackdetect_output(result.stderr)

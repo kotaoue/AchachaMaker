@@ -1,6 +1,8 @@
 """Unit tests for the video_processor module."""
 
+import os
 import subprocess
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -164,8 +166,14 @@ class TestDetectBlackFrames:
         with patch(
             "src.video_processor.subprocess.run", return_value=mock_result
         ) as mock_run:
-            frames = detect_black_frames("/tmp/v1.mp4")
+            frames = detect_black_frames(os.path.join(tempfile.gettempdir(), "v1.mp4"))
             assert frames == [0.0]
             called_cmd = mock_run.call_args[0][0]
             assert called_cmd[0] == "ffmpeg"
-            assert "blackdetect=d=0:pix_th=0.00:pic_th=1.0" in called_cmd
+            vf_idx = called_cmd.index("-vf")
+            assert called_cmd[vf_idx + 1] == "blackdetect=d=0:pix_th=0.00:pic_th=1.0"
+
+    def test_detect_black_frames_returns_empty_on_ffmpeg_error(self):
+        with patch("src.video_processor.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "ffmpeg")
+            assert detect_black_frames(os.path.join(tempfile.gettempdir(), "v1.mp4")) == []
