@@ -240,7 +240,7 @@ class TimelineWidget(QWidget):
 
         text_pen = QPen(QColor("#CDD6F4"))
         tick_pen = QPen(QColor("#585B70"))
-        painter.setFont(QFont("monospace", 9))
+        painter.setFont(get_font(("monospace", 9)))
 
         step = self._zoom_step_seconds
 
