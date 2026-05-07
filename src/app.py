@@ -272,8 +272,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(8)
 
         layout.addWidget(self._build_subtitle_group())
-        layout.addWidget(self._build_background_group())
         layout.addWidget(self._build_voicevox_group())
+        layout.addWidget(self._build_background_group())
 
         return container
 
