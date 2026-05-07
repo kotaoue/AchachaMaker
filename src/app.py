@@ -188,11 +188,13 @@ class MainWindow(QMainWindow):
 
         self._video_widget1 = QVideoWidget()
         self._video_widget1.setStyleSheet("background: #11111B;")
+        self._video_widget1.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self._video_widget1.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget1)
 
         self._video_widget2 = QVideoWidget()
         self._video_widget2.setStyleSheet("background: #11111B;")
+        self._video_widget2.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self._video_widget2.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget2)
 
