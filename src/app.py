@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTime
 
+from src.config import get_font
 from src.timeline import (
     TimelineAudio,
     TimelineBackground,
@@ -99,7 +100,8 @@ class MainWindow(QMainWindow):
 
         export_btn = QPushButton("📤  書き出す")
         export_btn.setFixedHeight(40)
-        export_btn.setFont(QFont("Hiragino Sans", 12, QFont.Weight.Bold))
+        export_btn.setFont(get_font(("default", 12)))
+        export_btn.font().setBold(True)
         export_btn.clicked.connect(self._on_export)
         root_layout.addWidget(export_btn)
 
