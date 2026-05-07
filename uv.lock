@@ -20,12 +20,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "pyqt6", specifier = ">=6.6.0" },
-    { name = "requests", specifier = ">=2.31.0" },
+    { name = "pyqt6", specifier = ">=6.11.0" },
+    { name = "requests", specifier = ">=2.33.1" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0.0" }]
+dev = [{ name = "pytest", specifier = ">=9.0.3" }]
 
 [[package]]
 name = "certifi"
