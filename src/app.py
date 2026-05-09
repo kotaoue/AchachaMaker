@@ -6,8 +6,8 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
-from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
+from PyQt6.QtGui import QColor, QFont, QIcon, QResizeEvent, QShowEvent
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
@@ -51,6 +51,9 @@ from src.video_processor import (
     probe_video,
 )
 from src.voicevox import VoicevoxClient
+
+PREVIEW_ASPECT_WIDTH = 16
+PREVIEW_ASPECT_HEIGHT = 9
 
 
 class WorkerSignals(QObject):
@@ -209,8 +212,6 @@ class MainWindow(QMainWindow):
         self._audio_out2.setVolume(0.0)
         self._player2.setAudioOutput(self._audio_out2)
         self._player2.setVideoOutput(self._video_widget2)
-
-        QTimer.singleShot(0, self._update_preview_container_size)
 
         return box
 
@@ -610,9 +611,14 @@ class MainWindow(QMainWindow):
                 del blocker
                 break
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """Keep the preview canvas aligned to the exported output aspect ratio."""
         super().resizeEvent(event)
+        self._update_preview_container_size()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Size the preview canvas after initial layout is established."""
+        super().showEvent(event)
         self._update_preview_container_size()
 
     def _update_preview_container_size(self) -> None:
@@ -627,10 +633,10 @@ class MainWindow(QMainWindow):
         available_width = max(1, available.width())
         available_height = max(1, available.height())
         target_width = available_width
-        target_height = int(target_width * 9 / 16)
+        target_height = int((target_width * PREVIEW_ASPECT_HEIGHT) / PREVIEW_ASPECT_WIDTH)
         if target_height > available_height:
             target_height = available_height
-            target_width = int(target_height * 16 / 9)
+            target_width = int((target_height * PREVIEW_ASPECT_WIDTH) / PREVIEW_ASPECT_HEIGHT)
         self._preview_container.setFixedSize(target_width, target_height)
 
     def _on_layout_changed(self, index: int) -> None:
