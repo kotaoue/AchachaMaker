@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from src.app import MainWindow
+from src.runtime import configure_runtime_environment
 
 
 def _create_dark_palette() -> QPalette:
@@ -30,6 +31,7 @@ def _create_dark_palette() -> QPalette:
 
 def main() -> None:
     """Start the AchachaMaker application."""
+    configure_runtime_environment()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setPalette(_create_dark_palette())

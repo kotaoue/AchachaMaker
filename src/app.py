@@ -6,7 +6,7 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QStandardPaths
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
 from PyQt6.QtGui import QColor, QFont, QIcon
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTime
 
+from src.config import get_font
 from src.timeline import (
     TimelineAudio,
     TimelineBackground,
@@ -99,7 +100,8 @@ class MainWindow(QMainWindow):
 
         export_btn = QPushButton("📤  書き出す")
         export_btn.setFixedHeight(40)
-        export_btn.setFont(QFont("sans-serif", 12, QFont.Weight.Bold))
+        export_btn.setFont(get_font(("default", 12)))
+        export_btn.font().setBold(True)
         export_btn.clicked.connect(self._on_export)
         root_layout.addWidget(export_btn)
 
@@ -140,19 +142,6 @@ class MainWindow(QMainWindow):
         self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
 
-        self._layout_combo = QComboBox()
-        self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
-        layout.addRow("レイアウト:", self._layout_combo)
-
-        self._duration_spin = QDoubleSpinBox()
-        self._duration_spin.setRange(1, 3600)
-        self._duration_spin.setValue(60)
-        self._duration_spin.setSuffix(" 秒")
-        self._duration_spin.valueChanged.connect(
-            lambda v: self._timeline.set_duration(v)
-        )
-        layout.addRow("書き出し時間:", self._duration_spin)
-
         return box
 
     def _build_video_file_row(
@@ -190,11 +179,13 @@ class MainWindow(QMainWindow):
 
         self._video_widget1 = QVideoWidget()
         self._video_widget1.setStyleSheet("background: #11111B;")
+        self._video_widget1.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self._video_widget1.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget1)
 
         self._video_widget2 = QVideoWidget()
         self._video_widget2.setStyleSheet("background: #11111B;")
+        self._video_widget2.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self._video_widget2.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget2)
 
@@ -217,19 +208,59 @@ class MainWindow(QMainWindow):
 
     def _build_timeline_panel(self) -> QGroupBox:
         """Build the scrollable timeline panel."""
-        box = QGroupBox("タイムライン  （スクロールでズーム、クリップをドラッグで移動）")
+        box = QGroupBox("タイムライン  （ホイールでズーム）")
         layout = QVBoxLayout(box)
+
+        # Zoom ratio selector and export duration
+        zoom_controls = QWidget()
+        zoom_layout = QHBoxLayout(zoom_controls)
+        zoom_layout.setContentsMargins(0, 0, 0, 0)
+        zoom_label = QLabel("ズーム:")
+        self._zoom_ratio_combo = QComboBox()
+        for step_seconds in (0.5, 1.0, 2.0, 5.0):
+            self._zoom_ratio_combo.addItem(f"1マス {step_seconds:g}秒", step_seconds)
+        self._zoom_ratio_combo.currentIndexChanged.connect(self._on_zoom_ratio_changed)
+        zoom_layout.addWidget(zoom_label)
+        zoom_layout.addWidget(self._zoom_ratio_combo)
+        zoom_layout.addStretch()
+
+        # Export duration (right-aligned)
+        duration_label = QLabel("書き出し時間:")
+        self._duration_spin = QDoubleSpinBox()
+        self._duration_spin.setRange(1, 3600)
+        self._duration_spin.setValue(60)
+        self._duration_spin.setSuffix(" 秒")
+        self._duration_spin.valueChanged.connect(
+            lambda v: self._timeline.set_duration(v)
+        )
+        zoom_layout.addWidget(duration_label)
+        zoom_layout.addWidget(self._duration_spin)
+        layout.addWidget(zoom_controls)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumHeight(240)
+
+        # Container for timeline with bottom padding
+        timeline_container = QWidget()
+        timeline_layout = QVBoxLayout(timeline_container)
+        timeline_layout.setContentsMargins(0, 0, 0, 0)
 
         self._timeline = TimelineWidget()
         self._timeline.set_duration(self._duration_spin.value() if hasattr(self, "_duration_spin") else 60)
         self._timeline.playhead_moved.connect(self._on_playhead_moved)
         self._timeline.clip_moved.connect(self._on_clip_moved)
-        scroll.setWidget(self._timeline)
+        self._timeline.zoom_ratio_changed.connect(self._sync_zoom_ratio_combo)
+        timeline_layout.addWidget(self._timeline)
+
+        self._sync_zoom_ratio_combo(self._timeline.current_zoom_step_seconds())
+
+        timeline_layout.addSpacing(48)
+        timeline_layout.addStretch()
+
+        scroll.setWidget(timeline_container)
 
         layout.addWidget(scroll)
         return box
@@ -242,8 +273,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(8)
 
         layout.addWidget(self._build_subtitle_group())
-        layout.addWidget(self._build_background_group())
         layout.addWidget(self._build_voicevox_group())
+        layout.addWidget(self._build_background_group())
 
         return container
 
@@ -300,6 +331,10 @@ class MainWindow(QMainWindow):
         bg_row_layout.addWidget(self._bg_path)
         bg_row_layout.addWidget(bg_browse)
         layout.addRow("背景画像:", bg_row)
+
+        self._layout_combo = QComboBox()
+        self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
+        layout.addRow("レイアウト:", self._layout_combo)
 
         self._bg_start = QDoubleSpinBox()
         self._bg_start.setRange(0, 9999)
@@ -549,6 +584,22 @@ class MainWindow(QMainWindow):
         which = "映像1" if index == 0 else "映像2"
         self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
+    def _on_zoom_ratio_changed(self, index: int) -> None:
+        """Update timeline zoom ratio when user changes the dropdown."""
+        step_seconds = self._zoom_ratio_combo.itemData(index)
+        if step_seconds is None:
+            return
+        self._timeline.set_zoom_step_seconds(float(step_seconds))
+
+    def _sync_zoom_ratio_combo(self, step_seconds: float) -> None:
+        """Keep the zoom ratio dropdown in sync with wheel-based zoom changes."""
+        for index in range(self._zoom_ratio_combo.count()):
+            if float(self._zoom_ratio_combo.itemData(index)) == step_seconds:
+                blocker = QSignalBlocker(self._zoom_ratio_combo)
+                self._zoom_ratio_combo.setCurrentIndex(index)
+                del blocker
+                break
+
 
     def _on_export(self) -> None:
         """Validate inputs, collect configuration, and run ffmpeg export asynchronously."""

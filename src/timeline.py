@@ -26,6 +26,8 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from src.config import get_font
+
 
 @dataclass
 class TimelineClip:
@@ -84,6 +86,7 @@ _ROW_HEIGHT = 36  # pixels per track row
 _LABEL_WIDTH = 60  # pixels for row labels on the left
 _MIN_PIXELS_PER_SECOND = 20
 _MAX_PIXELS_PER_SECOND = 300
+_ZOOM_STEP_SECONDS = (0.5, 1.0, 2.0, 5.0)
 
 
 class TimelineWidget(QWidget):
@@ -105,6 +108,7 @@ class TimelineWidget(QWidget):
     playhead_moved = pyqtSignal(float)
     clip_moved = pyqtSignal(int, float)
     subtitle_moved = pyqtSignal(int, float, float)
+    zoom_ratio_changed = pyqtSignal(float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -117,6 +121,7 @@ class TimelineWidget(QWidget):
         self.duration: float = 120.0  # timeline total length in seconds
         self.playhead: float = 0.0  # current playhead position in seconds
         self._pixels_per_second: float = 80.0
+        self._zoom_step_seconds: float = 2.0
 
         self._drag_target: Optional[object] = None  # item being dragged
         self._drag_start_x: int = 0
@@ -136,6 +141,39 @@ class TimelineWidget(QWidget):
         """Move the playhead to *time* (clamped to [0, duration])."""
         self.playhead = max(0.0, min(time, self.duration))
         self.update()
+
+    def current_zoom_step_seconds(self) -> float:
+        """Return the current major ruler interval in seconds."""
+        return self._zoom_step_seconds
+
+    def set_zoom_step_seconds(self, seconds: float) -> None:
+        """Set the major ruler interval and adjust zoom to a matching scale."""
+        step = min(_ZOOM_STEP_SECONDS, key=lambda candidate: abs(candidate - seconds))
+        self._zoom_step_seconds = step
+
+        target_pixels_per_second = {
+            0.5: 220.0,
+            1.0: 120.0,
+            2.0: 80.0,
+            5.0: 32.0,
+        }[step]
+        self._pixels_per_second = max(
+            _MIN_PIXELS_PER_SECOND,
+            min(_MAX_PIXELS_PER_SECOND, target_pixels_per_second),
+        )
+        self.setMinimumWidth(self._total_width())
+        self.zoom_ratio_changed.emit(self._zoom_step_seconds)
+        self.update()
+
+    def _zoom_step_for_pixels_per_second(self, pixels_per_second: float) -> float:
+        """Return the ruler interval that best matches the current zoom level."""
+        if pixels_per_second >= 170.0:
+            return 0.5
+        if pixels_per_second >= 95.0:
+            return 1.0
+        if pixels_per_second >= 48.0:
+            return 2.0
+        return 5.0
 
     def add_clip(self, clip: TimelineClip) -> None:
         """Append *clip* to the timeline and repaint."""
@@ -202,13 +240,9 @@ class TimelineWidget(QWidget):
 
         text_pen = QPen(QColor("#CDD6F4"))
         tick_pen = QPen(QColor("#585B70"))
-        painter.setFont(QFont("monospace", 9))
+        painter.setFont(get_font(("monospace", 9)))
 
-        step = 5.0
-        if self._pixels_per_second > 100:
-            step = 1.0
-        elif self._pixels_per_second > 40:
-            step = 2.0
+        step = self._zoom_step_seconds
 
         t = 0.0
         while t <= self.duration:
@@ -223,7 +257,7 @@ class TimelineWidget(QWidget):
 
     def _draw_rows(self, painter: QPainter) -> None:
         """Draw alternating row backgrounds, labels, and separators."""
-        painter.setFont(QFont("sans-serif", 9))
+        painter.setFont(get_font(("default", 9)))
         for row, label in enumerate(_ROW_LABELS):
             y = self._row_to_y(row)
             bg = QColor("#181825") if row % 2 == 0 else QColor("#1E1E2E")
@@ -267,7 +301,7 @@ class TimelineWidget(QWidget):
 
         if x2 - x1 > 20:
             painter.setPen(QPen(QColor("#1E1E2E")))
-            painter.setFont(QFont("sans-serif", 9))
+            painter.setFont(get_font(("default", 9)))
             painter.drawText(rect.adjusted(4, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter, label)
 
     def _draw_clips(self, painter: QPainter) -> None:
@@ -327,14 +361,14 @@ class TimelineWidget(QWidget):
 
     def _draw_playhead_line(self, painter: QPainter, x: int) -> None:
         """Draw the vertical playhead line spanning the full widget height."""
-        painter.setPen(QPen(QColor("#F38BA8"), 2))
+        painter.setPen(QPen(QColor("#F38BA8"), 4))
         painter.drawLine(x, 0, x, self.height())
 
     def _draw_playhead_marker(self, painter: QPainter, x: int) -> None:
         """Draw the downward-pointing triangle at the top of the playhead."""
         painter.setBrush(QBrush(QColor("#F38BA8")))
         painter.setPen(Qt.PenStyle.NoPen)
-        tri = [QPointF(x - 6, 0), QPointF(x + 6, 0), QPointF(x, 10)]
+        tri = [QPointF(x - 8, 0), QPointF(x + 8, 0), QPointF(x, 12)]
         painter.drawPolygon(QPolygonF(tri))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
@@ -352,7 +386,11 @@ class TimelineWidget(QWidget):
         """Record drag state for *target* starting at pixel column *x*."""
         self._drag_target = target
         self._drag_start_x = x
-        self._drag_start_time = target.start  # type: ignore[attr-defined]
+        if target is self:
+            # Playhead dragging
+            self._drag_start_time = self.playhead
+        else:
+            self._drag_start_time = target.start  # type: ignore[attr-defined]
 
     def _move_playhead_to(self, x: int) -> None:
         """Move the playhead to the time corresponding to pixel column *x*."""
@@ -367,26 +405,33 @@ class TimelineWidget(QWidget):
             return
         dx = int(event.position().x()) - self._drag_start_x
         dt = dx / self._pixels_per_second
-        new_start = max(0.0, self._drag_start_time + dt)
 
-        if isinstance(self._drag_target, TimelineClip):
-            idx = self.clips.index(self._drag_target)
-            self._drag_target.start = new_start
-            self.clip_moved.emit(idx, new_start)
-        elif isinstance(self._drag_target, TimelineSubtitle):
-            idx = self.subtitles.index(self._drag_target)
-            dur = self._drag_target.end - self._drag_target.start
-            self._drag_target.start = new_start
-            self._drag_target.end = new_start + dur
-            self.subtitle_moved.emit(idx, new_start, new_start + dur)
-        elif isinstance(self._drag_target, TimelineBackground):
-            dur = self._drag_target.end - self._drag_target.start
-            self._drag_target.start = new_start
-            self._drag_target.end = new_start + dur
-        elif isinstance(self._drag_target, TimelineAudio):
-            self._drag_target.start = new_start
+        if self._drag_target is self:
+            # Playhead dragging
+            new_playhead = max(0.0, min(self._drag_start_time + dt, self.duration))
+            self.set_playhead(new_playhead)
+            self.playhead_moved.emit(self.playhead)
+        else:
+            new_start = max(0.0, self._drag_start_time + dt)
 
-        self.update()
+            if isinstance(self._drag_target, TimelineClip):
+                idx = self.clips.index(self._drag_target)
+                self._drag_target.start = new_start
+                self.clip_moved.emit(idx, new_start)
+            elif isinstance(self._drag_target, TimelineSubtitle):
+                idx = self.subtitles.index(self._drag_target)
+                dur = self._drag_target.end - self._drag_target.start
+                self._drag_target.start = new_start
+                self._drag_target.end = new_start + dur
+                self.subtitle_moved.emit(idx, new_start, new_start + dur)
+            elif isinstance(self._drag_target, TimelineBackground):
+                dur = self._drag_target.end - self._drag_target.start
+                self._drag_target.start = new_start
+                self._drag_target.end = new_start + dur
+            elif isinstance(self._drag_target, TimelineAudio):
+                self._drag_target.start = new_start
+
+            self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         """End any active drag operation."""
@@ -396,15 +441,27 @@ class TimelineWidget(QWidget):
         """Zoom the timeline in/out with the scroll wheel."""
         delta = event.angleDelta().y()
         factor = 1.1 if delta > 0 else 0.9
+
         self._pixels_per_second = max(
             _MIN_PIXELS_PER_SECOND,
             min(_MAX_PIXELS_PER_SECOND, self._pixels_per_second * factor),
         )
+
+        zoom_step_seconds = self._zoom_step_for_pixels_per_second(self._pixels_per_second)
+        if zoom_step_seconds != self._zoom_step_seconds:
+            self._zoom_step_seconds = zoom_step_seconds
+            self.zoom_ratio_changed.emit(self._zoom_step_seconds)
+
         self.setMinimumWidth(self._total_width())
         self.update()
 
     def _hit_test(self, x: int, y: int) -> Optional[object]:
         """Return the item under the cursor, or None."""
+        # Check if playhead is clicked (wider hit area for easier interaction)
+        playhead_x = self._time_to_x(self.playhead)
+        if abs(x - playhead_x) <= 6 and y < _HEADER_HEIGHT:
+            return self
+
         for clip in self.clips:
             row_y = self._row_to_y(clip.row)
             x1 = self._time_to_x(clip.start)
