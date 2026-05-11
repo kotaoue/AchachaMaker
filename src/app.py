@@ -6,12 +6,13 @@ import os
 import threading
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
-from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QSettings, QSignalBlocker, QStandardPaths
+from PyQt6.QtGui import QColor, QFont, QIcon, QResizeEvent, QShowEvent
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -50,6 +51,9 @@ from src.video_processor import (
     probe_video,
 )
 from src.voicevox import VoicevoxClient
+
+PREVIEW_ASPECT_WIDTH = 16
+PREVIEW_ASPECT_HEIGHT = 9
 
 
 class WorkerSignals(QObject):
@@ -172,24 +176,37 @@ class MainWindow(QMainWindow):
         box = QGroupBox("プレビュー")
         layout = QVBoxLayout(box)
 
+        self._preview_host = QWidget()
+        self._preview_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        host_layout = QVBoxLayout(self._preview_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+
         self._preview_container = QWidget()
         self._preview_layout = QHBoxLayout(self._preview_container)
         self._preview_layout.setContentsMargins(0, 0, 0, 0)
-        self._preview_layout.setSpacing(2)
+        self._preview_layout.setSpacing(0)
 
         self._video_widget1 = QVideoWidget()
         self._video_widget1.setStyleSheet("background: #11111B;")
         self._video_widget1.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
-        self._video_widget1.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget1)
 
         self._video_widget2 = QVideoWidget()
         self._video_widget2.setStyleSheet("background: #11111B;")
         self._video_widget2.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
-        self._video_widget2.setMinimumHeight(200)
         self._preview_layout.addWidget(self._video_widget2)
 
-        layout.addWidget(self._preview_container, stretch=1)
+        self._preview_container.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        host_layout.addWidget(
+            self._preview_container,
+            stretch=1,
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
+        layout.addWidget(self._preview_host, stretch=1)
 
         # Set up media players (audio muted; preview only)
         self._player1 = QMediaPlayer()
@@ -334,6 +351,7 @@ class MainWindow(QMainWindow):
 
         self._layout_combo = QComboBox()
         self._layout_combo.addItems(["左右 (side by side)", "上下 (top/bottom)"])
+        self._layout_combo.currentIndexChanged.connect(self._on_layout_changed)
         layout.addRow("レイアウト:", self._layout_combo)
 
         self._bg_start = QDoubleSpinBox()
@@ -584,6 +602,7 @@ class MainWindow(QMainWindow):
         which = "映像1" if index == 0 else "映像2"
         self._sync_timeline_and_export_duration()
         self.statusBar().showMessage(f"{which} 開始位置: {new_start:.2f} 秒")
+
     def _on_zoom_ratio_changed(self, index: int) -> None:
         """Update timeline zoom ratio when user changes the dropdown."""
         step_seconds = self._zoom_ratio_combo.itemData(index)
@@ -599,6 +618,45 @@ class MainWindow(QMainWindow):
                 self._zoom_ratio_combo.setCurrentIndex(index)
                 del blocker
                 break
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Keep the preview canvas aligned to the exported output aspect ratio."""
+        super().resizeEvent(event)
+        self._update_preview_container_size()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Size the preview canvas after initial layout is established."""
+        super().showEvent(event)
+        self._update_preview_container_size()
+
+    def _update_preview_container_size(self) -> None:
+        """Resize preview canvas to 16:9 so preview layout matches export output."""
+        if not hasattr(self, "_preview_container") or not hasattr(self, "_preview_host"):
+            return
+        if not self._preview_host.isVisible():
+            return
+
+        available = self._preview_host.contentsRect()
+        available_width = max(1, available.width())
+        available_height = max(1, available.height())
+        target_width = available_width
+        target_height = int((target_width * PREVIEW_ASPECT_HEIGHT) / PREVIEW_ASPECT_WIDTH)
+        if target_height > available_height:
+            target_height = available_height
+            target_width = int((target_height * PREVIEW_ASPECT_WIDTH) / PREVIEW_ASPECT_HEIGHT)
+        if self._preview_container.width() == target_width and self._preview_container.height() == target_height:
+            return
+        self._preview_container.setFixedSize(target_width, target_height)
+
+    def _on_layout_changed(self, index: int) -> None:
+        """Apply selected layout orientation to the preview area."""
+        direction = (
+            QBoxLayout.Direction.LeftToRight
+            if index == 0
+            else QBoxLayout.Direction.TopToBottom
+        )
+        self._preview_layout.setDirection(direction)
+        self._update_preview_container_size()
 
 
     def _on_export(self) -> None:
