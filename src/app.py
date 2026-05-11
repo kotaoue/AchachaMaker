@@ -176,6 +176,13 @@ class MainWindow(QMainWindow):
         box = QGroupBox("プレビュー")
         layout = QVBoxLayout(box)
 
+        self._preview_host = QWidget()
+        self._preview_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        host_layout = QVBoxLayout(self._preview_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+
         self._preview_container = QWidget()
         self._preview_layout = QHBoxLayout(self._preview_container)
         self._preview_layout.setContentsMargins(0, 0, 0, 0)
@@ -194,11 +201,12 @@ class MainWindow(QMainWindow):
         self._preview_container.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        layout.addWidget(
+        host_layout.addWidget(
             self._preview_container,
             stretch=1,
             alignment=Qt.AlignmentFlag.AlignCenter,
         )
+        layout.addWidget(self._preview_host, stretch=1)
 
         # Set up media players (audio muted; preview only)
         self._player1 = QMediaPlayer()
@@ -623,13 +631,12 @@ class MainWindow(QMainWindow):
 
     def _update_preview_container_size(self) -> None:
         """Resize preview canvas to 16:9 so preview layout matches export output."""
-        if not hasattr(self, "_preview_container"):
+        if not hasattr(self, "_preview_container") or not hasattr(self, "_preview_host"):
             return
-        parent = self._preview_container.parentWidget()
-        if parent is None:
+        if not self._preview_host.isVisible():
             return
 
-        available = parent.contentsRect()
+        available = self._preview_host.contentsRect()
         available_width = max(1, available.width())
         available_height = max(1, available.height())
         target_width = available_width
@@ -637,6 +644,8 @@ class MainWindow(QMainWindow):
         if target_height > available_height:
             target_height = available_height
             target_width = int((target_height * PREVIEW_ASPECT_WIDTH) / PREVIEW_ASPECT_HEIGHT)
+        if self._preview_container.width() == target_width and self._preview_container.height() == target_height:
+            return
         self._preview_container.setFixedSize(target_width, target_height)
 
     def _on_layout_changed(self, index: int) -> None:
