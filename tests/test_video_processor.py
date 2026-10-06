@@ -1,6 +1,8 @@
 """Unit tests for the video_processor module."""
 
+import os
 import subprocess
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,8 +10,10 @@ import pytest
 from src.video_processor import (
     SubtitleEntry,
     VideoExportConfig,
+    _parse_blackdetect_output,
     _escape_drawtext,
     build_ffmpeg_command,
+    detect_black_frames,
     export_video,
 )
 
@@ -144,3 +148,32 @@ class TestExportVideo:
             mock_run.side_effect = subprocess.CalledProcessError(1, "ffmpeg")
             with pytest.raises(subprocess.CalledProcessError):
                 export_video(config)
+
+
+class TestDetectBlackFrames:
+    def test_parse_blackdetect_output_extracts_starts(self):
+        stderr = (
+            "[blackdetect @ 0x1] black_start:1.200 black_end:1.233 black_duration:0.033\n"
+            "[blackdetect @ 0x1] black_start:2.500 black_end:2.566 black_duration:0.066\n"
+        )
+        assert _parse_blackdetect_output(stderr) == [1.2, 2.5]
+
+    def test_detect_black_frames_calls_ffmpeg_and_parses(self):
+        mock_result = MagicMock()
+        mock_result.stderr = (
+            "[blackdetect @ 0x1] black_start:0.000 black_end:0.033 black_duration:0.033\n"
+        )
+        with patch(
+            "src.video_processor.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            frames = detect_black_frames(os.path.join(tempfile.gettempdir(), "v1.mp4"))
+            assert frames == [0.0]
+            called_cmd = mock_run.call_args[0][0]
+            assert called_cmd[0] == "ffmpeg"
+            vf_idx = called_cmd.index("-vf")
+            assert called_cmd[vf_idx + 1] == "blackdetect=d=0:pix_th=0.00:pic_th=1.0"
+
+    def test_detect_black_frames_returns_empty_on_ffmpeg_error(self):
+        with patch("src.video_processor.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "ffmpeg")
+            assert detect_black_frames(os.path.join(tempfile.gettempdir(), "v1.mp4")) == []

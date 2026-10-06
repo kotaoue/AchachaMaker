@@ -117,6 +117,7 @@ class TimelineWidget(QWidget):
         self.subtitles: list[TimelineSubtitle] = []
         self.backgrounds: list[TimelineBackground] = []
         self.audios: list[TimelineAudio] = []
+        self.black_markers: list[float] = []
 
         self.duration: float = 120.0  # timeline total length in seconds
         self.playhead: float = 0.0  # current playhead position in seconds
@@ -201,6 +202,12 @@ class TimelineWidget(QWidget):
         self.subtitles.clear()
         self.backgrounds.clear()
         self.audios.clear()
+        self.black_markers.clear()
+        self.update()
+
+    def set_black_markers(self, markers: list[float]) -> None:
+        """Set unique black-frame marker times (seconds) and repaint."""
+        self.black_markers = sorted(set(max(0.0, t) for t in markers))
         self.update()
 
     def _time_to_x(self, t: float) -> int:
@@ -232,6 +239,7 @@ class TimelineWidget(QWidget):
         self._draw_subtitles(painter)
         self._draw_backgrounds(painter)
         self._draw_audios(painter)
+        self._draw_black_markers(painter)
         self._draw_playhead(painter)
 
     def _draw_ruler(self, painter: QPainter) -> None:
@@ -358,6 +366,14 @@ class TimelineWidget(QWidget):
         x = self._time_to_x(self.playhead)
         self._draw_playhead_line(painter, x)
         self._draw_playhead_marker(painter, x)
+
+    def _draw_black_markers(self, painter: QPainter) -> None:
+        """Draw vertical marker lines where black frames were detected."""
+        painter.setPen(QPen(QColor("#F9E2AF"), 1, Qt.PenStyle.DotLine))
+        for t in self.black_markers:
+            if 0 <= t <= self.duration:
+                x = self._time_to_x(t)
+                painter.drawLine(x, _HEADER_HEIGHT, x, self.height())
 
     def _draw_playhead_line(self, painter: QPainter, x: int) -> None:
         """Draw the vertical playhead line spanning the full widget height."""
@@ -491,4 +507,3 @@ class TimelineWidget(QWidget):
                 return audio
 
         return None
-
