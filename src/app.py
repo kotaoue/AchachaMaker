@@ -47,11 +47,14 @@ from src.video_processor import (
     SubtitleEntry,
     VideoExportConfig,
     build_ffmpeg_command,
+    detect_black_frames,
     export_video,
     probe_video,
 )
 from src.voicevox import VoicevoxClient
 
+_MAX_BLACK_FRAME_DISPLAY = 20
+_NO_BLACK_FRAMES_TEXT = "黒フレームなし"
 PREVIEW_ASPECT_WIDTH = 16
 PREVIEW_ASPECT_HEIGHT = 9
 
@@ -62,6 +65,12 @@ class WorkerSignals(QObject):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
+
+
+class BlackFrameSignals(QObject):
+    """Signal bridge for async black-frame detection."""
+
+    finished = pyqtSignal(int, str, list)
 
 
 class MainWindow(QMainWindow):
@@ -75,6 +84,7 @@ class MainWindow(QMainWindow):
         self._voicevox = VoicevoxClient()
         self._audio_path: Optional[str] = None
         self._speakers: list[dict] = []
+        self._video_black_frames: dict[int, list[float]] = {0: [], 1: []}
         self._setup_ui()
         self._check_voicevox()
 
@@ -140,11 +150,19 @@ class MainWindow(QMainWindow):
         layout.addRow("映像 1:", row1)
         self._video1_start = self._build_start_spinbox()
         layout.addRow("開始位置 1:", self._video1_start)
+        self._video1_black = QLineEdit()
+        self._video1_black.setReadOnly(True)
+        self._video1_black.setPlaceholderText(_NO_BLACK_FRAMES_TEXT)
+        layout.addRow("黒フレーム 1:", self._video1_black)
 
         self._video2_path, row2 = self._build_video_file_row("動画ファイル 2 のパス", 1)
         layout.addRow("映像 2:", row2)
         self._video2_start = self._build_start_spinbox()
         layout.addRow("開始位置 2:", self._video2_start)
+        self._video2_black = QLineEdit()
+        self._video2_black.setReadOnly(True)
+        self._video2_black.setPlaceholderText(_NO_BLACK_FRAMES_TEXT)
+        layout.addRow("黒フレーム 2:", self._video2_black)
 
         return box
 
@@ -420,8 +438,64 @@ class MainWindow(QMainWindow):
         self._settings.setValue("last_input_dir", os.path.dirname(path))
         line_edit.setText(path)
         self._update_timeline_clip(path, clip_index)
+        self._set_black_frame_status(clip_index, "解析中…")
+        self._detect_black_frames_async(path, clip_index)
         self._load_preview(path, clip_index)
         self.statusBar().showMessage(f"映像{clip_index + 1}: {os.path.basename(path)}")
+
+    def _refresh_black_frame_ui(self) -> None:
+        """Refresh black-frame text fields and timeline markers."""
+        frames1 = self._video_black_frames.get(0, [])
+        frames2 = self._video_black_frames.get(1, [])
+        self._video1_black.setText(self._format_black_frame_times(frames1))
+        self._video2_black.setText(self._format_black_frame_times(frames2))
+        merged = frames1 + frames2
+        self._timeline.set_black_markers(merged)
+
+    def _set_black_frame_status(self, clip_index: int, text: str) -> None:
+        """Update black-frame status text for one video input."""
+        target = self._video1_black if clip_index == 0 else self._video2_black
+        target.setText(text)
+
+    def _detect_black_frames_async(self, path: str, clip_index: int) -> None:
+        """Detect black frames in a background thread and update the UI."""
+        signals = BlackFrameSignals(self)
+        signals.finished.connect(self._on_black_frames_detected)
+
+        def run() -> None:
+            frames = detect_black_frames(path)
+            signals.finished.emit(clip_index, path, frames)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_black_frames_detected(
+        self, clip_index: int, path: str, frames: list[float]
+    ) -> None:
+        """Store async black-frame results if the selected path is still current."""
+        current_path = self._video_path_text(clip_index)
+        if current_path != path:
+            return
+        self._video_black_frames[clip_index] = frames
+        self._refresh_black_frame_ui()
+
+    def _video_path_text(self, clip_index: int) -> str:
+        """Return the selected path text for the specified video input."""
+        return (
+            self._video1_path.text().strip()
+            if clip_index == 0
+            else self._video2_path.text().strip()
+        )
+
+    def _format_black_frame_times(self, frames: list[float]) -> str:
+        """Format black-frame times for compact display."""
+        if not frames:
+            return _NO_BLACK_FRAMES_TEXT
+        shown = frames[:_MAX_BLACK_FRAME_DISPLAY]
+        text = ", ".join(f"{t:.2f}s" for t in shown)
+        hidden = len(frames) - len(shown)
+        if hidden > 0:
+            text += f" ... (+{hidden})"
+        return text
 
     def _update_timeline_clip(self, path: str, clip_index: int) -> None:
         """Replace the timeline clip for *clip_index* with one built from *path*."""
